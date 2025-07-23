@@ -1,191 +1,189 @@
-# install.packages(c("shiny", "shinydashboard", "DT", "leaflet", 
-#                    "exifr", "magick", "shinyFiles", "shinyWidgets", 
-#                    "htmltools", "dplyr", "lubridate", "jsonlite"))
-# You'll also need to install exiftool on your system for metadata writing:
-# 
-# Windows: Download from https://exiftool.org/
-# macOS: brew install exiftool
-# Linux: sudo apt-get install libimage-exiftool-perl
-# Claude Prompt: You a Shiny for R developer. Write a shiny app to manage photo
-# metadata.  the app should load a photo, preview it, offer the ability to
-# change the file name, the metadata concerning creation date, location and
-# additional text descriptions.  The location should be selectable via clicking
-# on a map or typing a place name.  Include a checkbox to select "Date is
-# Approximate."  If checked, add "Date is approximate" to the text metadata. By
-# default the first photo in a folder should be loaded and the user should have
-# the ability to save and automatically load the next photo in the folder.
-
-# Required libraries
 # Required libraries
 library(shiny)
-library(shinydashboard)
-library(DT)
+library(bslib)
 library(leaflet)
 library(exifr)
 library(magick)
 library(shinyFiles)
 library(shinyWidgets)
-library(htmltools)
 library(dplyr)
 library(lubridate)
 
 # UI
-ui <- dashboardPage(
-  dashboardHeader(title = "Photo Metadata Manager"),
-  
-  dashboardSidebar(
-    sidebarMenu(
-      menuItem("Photo Manager", tabName = "photos", icon = icon("camera"))
-    )
+ui <- page_navbar(
+  title = "Photo Metadata Manager",
+  theme = bs_theme(
+    version = 5,
+    bootswatch = "flatly",
+    primary = "#3498db",
+    secondary = "#95a5a6",
+    success = "#2ecc71",
+    warning = "#f39c12",
+    danger = "#e74c3c"
   ),
   
-  dashboardBody(
-    tags$head(
-      tags$style(HTML("
-        .content-wrapper, .right-side {
-          background-color: #f4f4f4;
-        }
-        .photo-preview {
-          max-width: 100%;
-          max-height: 400px;
-          border: 2px solid #ddd;
-          border-radius: 8px;
-        }
-        .metadata-panel {
-          background: white;
-          padding: 15px;
-          border-radius: 8px;
-          margin: 10px 0;
-        }
-        .navigation-buttons {
-          margin: 10px 0;
-        }
-        .map-container {
-          height: 300px;
-          margin: 10px 0;
-        }
-      "))
-    ),
+  nav_panel(
+    title = "Photo Manager",
+    icon = icon("camera"),
     
-    tabItems(
-      tabItem(tabName = "photos",
-              fluidRow(
-                # Photo selection and navigation
-                box(
-                  title = "Photo Selection", status = "primary", solidHeader = TRUE,
-                  width = 12,
-                  fluidRow(
-                    column(4,
-                           shinyDirButton("selectDir", "Select Photo Folder", "Choose folder containing photos")
-                    ),
-                    column(8,
-                           verbatimTextOutput("currentFolder")
-                    )
-                  ),
-                  br(),
-                  fluidRow(
-                    column(12,
-                           div(class = "navigation-buttons",
-                               actionButton("prevPhoto", "Previous", icon = icon("arrow-left")),
-                               actionButton("nextPhoto", "Next", icon = icon("arrow-right")),
-                               actionButton("saveMetadata", "Save & Next", icon = icon("save"), class = "btn-success"),
-                               span(style = "margin-left: 20px;", textOutput("photoCounter", inline = TRUE))
-                           )
-                    )
-                  )
-                )
+    page_sidebar(
+      sidebar = sidebar(
+        title = "Photos",
+        width = 150,
+        
+        # Folder selection
+        shinyDirButton("selectDir", "Select Folder", 
+                       "Choose folder containing photos",
+                       class = "btn-primary w-100 btn-sm"),
+        
+        br(), br(),
+        
+        # Current folder display
+        card(
+          height = "60px",
+          card_body(
+            padding = "8px",
+            verbatimTextOutput("currentFolder")
+          )
+        ),
+        
+        br(),
+        
+        # Navigation controls
+        actionButton("prevPhoto", "Previous", 
+                     icon = icon("arrow-left"),
+                     class = "btn-outline-secondary btn-sm w-100"),
+        
+        br(),
+        
+        actionButton("nextPhoto", "Next", 
+                     icon = icon("arrow-right"),
+                     class = "btn-outline-secondary btn-sm w-100"),
+        
+        br(),
+        
+        actionButton("saveMetadata", "Save & Next", 
+                     icon = icon("save"),
+                     class = "btn-success btn-sm w-100"),
+        
+        br(), br(),
+        
+        # Photo counter
+        card(
+          height = "50px",
+          card_body(
+            padding = "8px",
+            textOutput("photoCounter")
+          )
+        )
+      ),
+      
+      # Main content area
+      # Photo preview, metadata display, and metadata editing row
+      layout_columns(
+        col_widths = c(5, 3, 4),
+        fill = FALSE,
+        gap = "10px",
+        
+        # Photo preview
+        card(
+          full_screen = FALSE,
+          height = "400px",
+          card_header("Photo Preview"),
+          card_body(
+            padding = "8px",
+            imageOutput("photoPreview", height = "330px")
+          )
+        ),
+        
+        # Current metadata display
+        card(
+          full_screen = FALSE,
+          height = "400px",
+          card_header("Current Photo Info"),
+          card_body(
+            padding = "10px",
+            verbatimTextOutput("currentMetadata")
+          )
+        ),
+        
+        # Metadata editing
+        card(
+          full_screen = FALSE,
+          height = "400px",
+          card_header("Metadata Editor"),
+          card_body(
+            padding = "10px",
+            
+            textInput("fileName", "File Name:", value = ""),
+            
+            layout_columns(
+              col_widths = c(8, 4),
+              fill = FALSE,
+              dateInput("creationDate", "Creation Date:", value = Sys.Date()),
+              checkboxInput("dateApproximate", "Approximate", value = FALSE)
+            ),
+            
+            timeInput("creationTime", "Creation Time:", value = "12:00:00"),
+            
+            h6("Location"),
+            navset_card_tab(
+              height = "100px",
+              nav_panel(
+                "Search",
+                textInput("locationSearch", "", 
+                          placeholder = "Enter location"),
+                actionButton("searchLocation", "Search", 
+                             icon = icon("search"),
+                             class = "btn-outline-primary btn-sm")
               ),
-              
-              fluidRow(
-                # Photo preview
-                column(6,
-                       box(
-                         title = "Photo Preview", status = "info", solidHeader = TRUE,
-                         width = NULL, height = "500px",
-                         div(
-                           style = "text-align: center; padding: 20px;",
-                           imageOutput("photoPreview", height = "400px")
-                         )
-                       )
-                ),
-                
-                # Metadata editing
-                column(6,
-                       box(
-                         title = "Metadata Editor", status = "warning", solidHeader = TRUE,
-                         width = NULL, height = "500px",
-                         
-                         # File name
-                         textInput("fileName", "File Name:", value = ""),
-                         
-                         # Date inputs
-                         fluidRow(
-                           column(8,
-                                  dateInput("creationDate", "Creation Date:", value = Sys.Date())
-                           ),
-                           column(4,
-                                  br(),
-                                  checkboxInput("dateApproximate", "Date is Approximate", value = FALSE)
-                           )
-                         ),
-                         
-                         # Time input
-                         timeInput("creationTime", "Creation Time:", value = "12:00:00"),
-                         
-                         # Location input methods
-                         h4("Location"),
-                         tabsetPanel(
-                           tabPanel("Search Place",
-                                    textInput("locationSearch", "Search Location:", 
-                                              placeholder = "Enter city, address, or landmark"),
-                                    actionButton("searchLocation", "Search", icon = icon("search"))
-                           ),
-                           tabPanel("Click on Map",
-                                    p("Click on the map to set location")
-                           )
-                         ),
-                         
-                         # Current coordinates display
-                         fluidRow(
-                           column(6,
-                                  numericInput("latitude", "Latitude:", value = NULL, step = 0.000001)
-                           ),
-                           column(6,
-                                  numericInput("longitude", "Longitude:", value = NULL, step = 0.000001)
-                           )
-                         ),
-                         
-                         # Description
-                         textAreaInput("description", "Description:", 
-                                       placeholder = "Add any additional notes or descriptions",
-                                       rows = 3)
-                       )
-                )
-              ),
-              
-              fluidRow(
-                # Map
-                column(12,
-                       box(
-                         title = "Location Map", status = "success", solidHeader = TRUE,
-                         width = NULL,
-                         div(class = "map-container",
-                             leafletOutput("locationMap", height = "300px")
-                         )
-                       )
-                )
-              ),
-              
-              fluidRow(
-                # Current metadata display
-                column(12,
-                       box(
-                         title = "Current Photo Information", status = "info", solidHeader = TRUE,
-                         width = NULL,
-                         verbatimTextOutput("currentMetadata")
-                       )
-                )
+              nav_panel(
+                "Map Click",
+                p("Click map below", class = "small text-muted")
               )
+            ),
+            
+            layout_columns(
+              col_widths = c(6, 6),
+              fill = FALSE,
+              numericInput("latitude", "Lat:", value = NULL, step = 0.000001),
+              numericInput("longitude", "Lng:", value = NULL, step = 0.000001)
+            )
+          )
+        )
+      ),
+      
+      br(),
+      
+      # Description and Map row
+      layout_columns(
+        col_widths = c(4, 8),
+        fill = FALSE,
+        gap = "10px",
+        
+        # Description card
+        card(
+          full_screen = FALSE,
+          height = "350px",
+          card_header("Description"),
+          card_body(
+            padding = "10px",
+            textAreaInput("description", "", 
+                          placeholder = "Add any additional notes or descriptions",
+                          rows = 12)
+          )
+        ),
+        
+        # Map section
+        card(
+          full_screen = FALSE,
+          height = "350px",
+          card_header("Location Map"),
+          card_body(
+            padding = "8px",
+            leafletOutput("locationMap", height = "280px")
+          )
+        )
       )
     )
   )
@@ -202,22 +200,94 @@ server <- function(input, output, session) {
     originalMetadata = NULL
   )
   
+  # Function to convert GPS coordinates with proper sign
+  convertGPSCoordinate <- function(coord_value, ref_value) {
+    if (is.null(coord_value) || is.na(coord_value)) return(NULL)
+    
+    # Convert to numeric if it's not already
+    coord_num <- as.numeric(coord_value)
+    if (is.na(coord_num)) return(NULL)
+    
+    # Apply sign based on reference
+    if (!is.null(ref_value) && !is.na(ref_value)) {
+      ref_upper <- toupper(as.character(ref_value))
+      if (ref_upper %in% c("S", "W")) {
+        coord_num <- -abs(coord_num)
+      } else if (ref_upper %in% c("N", "E")) {
+        coord_num <- abs(coord_num)
+      }
+    }
+    
+    return(coord_num)
+  }
+  
+  # Function to generate unique filename
+  generateUniqueFilename <- function(desired_path, original_path) {
+    # If the desired path is the same as original, no change needed
+    if (desired_path == original_path) {
+      return(desired_path)
+    }
+    
+    # If the desired file doesn't exist, use it
+    if (!file.exists(desired_path)) {
+      return(desired_path)
+    }
+    
+    # Extract directory, filename without extension, and extension
+    dir_path <- dirname(desired_path)
+    filename_full <- basename(desired_path)
+    filename_parts <- tools::file_path_sans_ext(filename_full)
+    file_ext <- tools::file_ext(filename_full)
+    
+    # Start with increment 1
+    increment <- 1
+    
+    # Keep trying until we find a unique name
+    repeat {
+      new_filename <- paste0(filename_parts, "_", increment, ".", file_ext)
+      new_path <- file.path(dir_path, new_filename)
+      
+      # If this path doesn't exist, we found our unique name
+      if (!file.exists(new_path)) {
+        return(new_path)
+      }
+      
+      # Otherwise, increment and try again
+      increment <- increment + 1
+      
+      # Safety check to prevent infinite loop (shouldn't happen in practice)
+      if (increment > 9999) {
+        # Fall back to timestamp-based naming
+        timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+        new_filename <- paste0(filename_parts, "_", timestamp, ".", file_ext)
+        new_path <- file.path(dir_path, new_filename)
+        return(new_path)
+      }
+    }
+  }
+  
   # Directory selection
   shinyDirChoose(input, "selectDir", roots = c(home = "~", root = "/"))
   
   # Observe directory selection
-  # Observe directory selection
   observeEvent(input$selectDir, {
-    # Check if selectDir is not NULL and is a proper list structure
-    if (!is.null(input$selectDir) && 
-        !is.atomic(input$selectDir) && 
-        !is.null(input$selectDir$path) && 
-        length(input$selectDir$path) > 0) {
+    if (!is.null(input$selectDir)) {
+      # Handle both list and atomic vector cases
+      if (is.list(input$selectDir) && !is.null(input$selectDir$path) && length(input$selectDir$path) > 0) {
+        values$photoFolder <- parseDirPath(c(home = "~", root = "/"), input$selectDir)
+      } else if (is.atomic(input$selectDir) && length(input$selectDir) > 0) {
+        tryCatch({
+          values$photoFolder <- parseDirPath(c(home = "~", root = "/"), input$selectDir)
+        }, error = function(e) {
+          showNotification("Error parsing directory path", type = "warning")
+          return()
+        })
+      } else {
+        return()
+      }
       
-      values$photoFolder <- parseDirPath(c(home = "~", root = "/"), input$selectDir)
-      
-      # Only proceed if parseDirPath returned a valid path
-      if (length(values$photoFolder) > 0 && nchar(values$photoFolder) > 0) {
+      # Validate that we got a valid folder path
+      if (!is.null(values$photoFolder) && length(values$photoFolder) > 0 && dir.exists(values$photoFolder)) {
         # Get photo files
         photo_extensions <- c("jpg", "jpeg", "png", "tiff", "tif", "bmp")
         all_files <- list.files(values$photoFolder, full.names = TRUE)
@@ -226,9 +296,12 @@ server <- function(input, output, session) {
         if (length(values$photoFiles) > 0) {
           values$currentPhotoIndex <- 1
           loadCurrentPhoto()
+          showNotification(paste("Loaded", length(values$photoFiles), "photos"), type = "message")
         } else {
           showNotification("No photo files found in selected folder!", type = "warning")
         }
+      } else {
+        showNotification("Invalid directory selected", type = "warning")
       }
     }
   }, ignoreInit = TRUE)
@@ -246,41 +319,87 @@ server <- function(input, output, session) {
         # Update UI with existing metadata
         updateTextInput(session, "fileName", value = basename(current_file))
         
-        # Extract date/time if available
-        if (!is.null(values$originalMetadata$DateTime)) {
-          dt <- ymd_hms(values$originalMetadata$DateTime, quiet = TRUE)
-          if (!is.na(dt)) {
-            updateDateInput(session, "creationDate", value = as.Date(dt))
-            updateTimeInput(session, "creationTime", value = format(dt, "%H:%M:%S"))
+        # Extract and set date/time if available
+        date_set <- FALSE
+        time_set <- FALSE
+        
+        # Try different date/time fields in order of preference
+        date_fields <- c("DateTime", "DateTimeOriginal", "CreateDate", "ModifyDate")
+        
+        for (field in date_fields) {
+          if (!is.null(values$originalMetadata[[field]]) && !date_set) {
+            dt <- ymd_hms(values$originalMetadata[[field]], quiet = TRUE)
+            if (!is.na(dt)) {
+              updateDateInput(session, "creationDate", value = as.Date(dt))
+              updateTimeInput(session, "creationTime", value = format(dt, "%H:%M:%S"))
+              date_set <- TRUE
+              time_set <- TRUE
+              break
+            }
           }
         }
         
-        # Extract GPS coordinates if available
-        if (!is.null(values$originalMetadata$GPSLatitude) && !is.null(values$originalMetadata$GPSLongitude)) {
-          updateNumericInput(session, "latitude", value = values$originalMetadata$GPSLatitude)
-          updateNumericInput(session, "longitude", value = values$originalMetadata$GPSLongitude)
-        } else {
-          updateNumericInput(session, "latitude", value = NULL)
-          updateNumericInput(session, "longitude", value = NULL)
+        # If no date found, try date-only fields
+        if (!date_set) {
+          date_only_fields <- c("DateTimeDigitized", "FileModifyDate")
+          for (field in date_only_fields) {
+            if (!is.null(values$originalMetadata[[field]])) {
+              dt <- ymd(values$originalMetadata[[field]], quiet = TRUE)
+              if (!is.na(dt)) {
+                updateDateInput(session, "creationDate", value = dt)
+                date_set <- TRUE
+                break
+              }
+            }
+          }
         }
         
-        # Extract description if available
-        desc <- values$originalMetadata$ImageDescription %||% ""
-        updateTextAreaInput(session, "description", value = desc)
-        
-        # Check if date is marked as approximate
-        if (grepl("Date is approximate", desc, ignore.case = TRUE)) {
-          updateCheckboxInput(session, "dateApproximate", value = TRUE)
-        } else {
-          updateCheckboxInput(session, "dateApproximate", value = FALSE)
+        # Set default time if date was found but time wasn't
+        if (date_set && !time_set) {
+          updateTimeInput(session, "creationTime", value = "12:00:00")
         }
+        
+        # Extract GPS coordinates with proper sign handling
+        lat <- convertGPSCoordinate(values$originalMetadata$GPSLatitude, values$originalMetadata$GPSLatitudeRef)
+        lng <- convertGPSCoordinate(values$originalMetadata$GPSLongitude, values$originalMetadata$GPSLongitudeRef)
+        
+        updateNumericInput(session, "latitude", value = lat)
+        updateNumericInput(session, "longitude", value = lng)
+        
+        # Extract description from various possible fields
+        description <- ""
+        desc_fields <- c("ImageDescription", "UserComment", "Caption", "Description", "Subject")
+        
+        for (field in desc_fields) {
+          if (!is.null(values$originalMetadata[[field]]) && 
+              !is.na(values$originalMetadata[[field]]) && 
+              nchar(trimws(values$originalMetadata[[field]])) > 0) {
+            description <- trimws(values$originalMetadata[[field]])
+            break
+          }
+        }
+        
+        updateTextAreaInput(session, "description", value = description)
+        
+        # Check if date is marked as approximate in any description field
+        approximate_date <- FALSE
+        for (field in desc_fields) {
+          if (!is.null(values$originalMetadata[[field]]) && 
+              grepl("date is approximate|approximate date", values$originalMetadata[[field]], ignore.case = TRUE)) {
+            approximate_date <- TRUE
+            break
+          }
+        }
+        updateCheckboxInput(session, "dateApproximate", value = approximate_date)
         
       }, error = function(e) {
         showNotification(paste("Error reading metadata:", e$message), type = "warning")
         values$originalMetadata <- NULL
         
-        # Reset form fields
+        # Reset form fields to defaults
         updateTextInput(session, "fileName", value = basename(current_file))
+        updateDateInput(session, "creationDate", value = Sys.Date())
+        updateTimeInput(session, "creationTime", value = "12:00:00")
         updateNumericInput(session, "latitude", value = NULL)
         updateNumericInput(session, "longitude", value = NULL)
         updateTextAreaInput(session, "description", value = "")
@@ -313,88 +432,156 @@ server <- function(input, output, session) {
     }
   })
   
-  # Function to save metadata using exiftool
-  saveMetadataWithExiftool <- function(file_path, datetime_string, lat, lon, description) {
-    # Build exiftool command
-    cmd_args <- c(
-      "-overwrite_original",
-      paste0('-DateTime="', datetime_string, '"'),
-      paste0('-DateTimeOriginal="', datetime_string, '"'),
-      paste0('-CreateDate="', datetime_string, '"')
-    )
-    
-    # Add GPS coordinates if provided
-    if (!is.null(lat) && !is.null(lon) && !is.na(lat) && !is.na(lon)) {
-      cmd_args <- c(cmd_args,
-                    paste0('-GPSLatitude=', abs(lat)),
-                    paste0('-GPSLongitude=', abs(lon)),
-                    ifelse(lat >= 0, '-GPSLatitudeRef=N', '-GPSLatitudeRef=S'),
-                    ifelse(lon >= 0, '-GPSLongitudeRef=E', '-GPSLongitudeRef=W')
-      )
-    }
-    
-    # Add description if provided
-    if (!is.null(description) && nchar(description) > 0) {
-      # Escape quotes in description
-      clean_description <- gsub('"', '\\"', description)
-      cmd_args <- c(cmd_args, paste0('-ImageDescription="', clean_description, '"'))
-    }
-    
-    # Add the file path
-    cmd_args <- c(cmd_args, shQuote(file_path))
-    
-    # Execute exiftool command
-    result <- system2("exiftool", args = cmd_args, stdout = TRUE, stderr = TRUE)
-    
-    return(list(
-      success = attr(result, "status") %||% 0 == 0,
-      output = result
-    ))
-  }
-  
-  # Function to save metadata using magick (fallback)
-  saveMetadataWithMagick <- function(file_path, datetime_string, lat, lon, description) {
-    tryCatch({
-      img <- image_read(file_path)
-      
-      # Set basic metadata
-      img <- image_set_attribute(img, "date:create", datetime_string)
-      img <- image_set_attribute(img, "date:modify", datetime_string)
-      
-      # Set description if provided
-      if (!is.null(description) && nchar(description) > 0) {
-        img <- image_set_attribute(img, "comment", description)
-      }
-      
-      # Note: magick has limited GPS support, so we'll add GPS info to comment
-      if (!is.null(lat) && !is.null(lon) && !is.na(lat) && !is.na(lon)) {
-        gps_info <- paste("GPS:", lat, ",", lon)
-        current_comment <- image_get_attribute(img, "comment") %||% ""
-        new_comment <- if(nchar(current_comment) > 0) {
-          paste(current_comment, gps_info, sep = " | ")
-        } else {
-          gps_info
-        }
-        img <- image_set_attribute(img, "comment", new_comment)
-      }
-      
-      # Write the image back
-      image_write(img, file_path)
-      
-      return(list(success = TRUE, output = "Metadata saved with magick"))
-      
-    }, error = function(e) {
-      return(list(success = FALSE, output = paste("Magick error:", e$message)))
-    })
-  }
-  
+  # Function to save metadata
   # Function to save metadata
   # Function to save metadata
   saveCurrentMetadata <- function() {
     if (!is.null(values$currentPhoto)) {
       tryCatch({
+        # Check if there are any changes to save
+        changes_detected <- FALSE
+        
+        # Check filename change
+        current_filename <- basename(values$currentPhoto)
+        new_filename <- input$fileName %||% basename(values$currentPhoto)
+        if (!grepl("\\.", new_filename)) {
+          new_filename <- paste0(new_filename, ".", tools::file_ext(values$currentPhoto))
+        }
+        
+        if (new_filename != current_filename) {
+          changes_detected <- TRUE
+        }
+        
+        # Check date/time changes
+        if (!is.null(values$originalMetadata)) {
+          # Get current date/time from metadata
+          current_datetime <- NULL
+          date_fields <- c("DateTime", "DateTimeOriginal", "CreateDate", "ModifyDate")
+          
+          for (field in date_fields) {
+            if (!is.null(values$originalMetadata[[field]])) {
+              current_datetime <- ymd_hms(values$originalMetadata[[field]], quiet = TRUE)
+              if (!is.na(current_datetime)) break
+            }
+          }
+          
+          # Compare with form values
+          new_datetime <- ymd_hms(paste(input$creationDate, input$creationTime), quiet = TRUE)
+          
+          if (is.null(current_datetime) || is.na(current_datetime) || 
+              (!is.na(new_datetime) && abs(as.numeric(difftime(current_datetime, new_datetime, units = "secs"))) > 1)) {
+            changes_detected <- TRUE
+          }
+        } else {
+          # If no metadata exists, consider it a change if date/time is set
+          changes_detected <- TRUE
+        }
+        
+        # Check GPS coordinates changes
+        if (!is.null(values$originalMetadata)) {
+          current_lat <- convertGPSCoordinate(values$originalMetadata$GPSLatitude, values$originalMetadata$GPSLatitudeRef)
+          current_lng <- convertGPSCoordinate(values$originalMetadata$GPSLongitude, values$originalMetadata$GPSLongitudeRef)
+          
+          new_lat <- input$latitude
+          new_lng <- input$longitude
+          
+          # Check if coordinates changed (with small tolerance for floating point precision)
+          lat_changed <- FALSE
+          lng_changed <- FALSE
+          
+          if (is.null(current_lat) && !is.null(new_lat) && !is.na(new_lat)) {
+            lat_changed <- TRUE
+          } else if (!is.null(current_lat) && (is.null(new_lat) || is.na(new_lat))) {
+            lat_changed <- TRUE
+          } else if (!is.null(current_lat) && !is.null(new_lat) && !is.na(new_lat)) {
+            if (abs(current_lat - new_lat) > 0.000001) {
+              lat_changed <- TRUE
+            }
+          }
+          
+          if (is.null(current_lng) && !is.null(new_lng) && !is.na(new_lng)) {
+            lng_changed <- TRUE
+          } else if (!is.null(current_lng) && (is.null(new_lng) || is.na(new_lng))) {
+            lng_changed <- TRUE
+          } else if (!is.null(current_lng) && !is.null(new_lng) && !is.na(new_lng)) {
+            if (abs(current_lng - new_lng) > 0.000001) {
+              lng_changed <- TRUE
+            }
+          }
+          
+          if (lat_changed || lng_changed) {
+            changes_detected <- TRUE
+          }
+        } else {
+          # If no metadata exists, consider it a change if coordinates are set
+          if ((!is.null(input$latitude) && !is.na(input$latitude)) || 
+              (!is.null(input$longitude) && !is.na(input$longitude))) {
+            changes_detected <- TRUE
+          }
+        }
+        
+        # Check description changes
+        if (!is.null(values$originalMetadata)) {
+          current_description <- ""
+          desc_fields <- c("ImageDescription", "UserComment", "Caption", "Description", "Subject")
+          
+          for (field in desc_fields) {
+            if (!is.null(values$originalMetadata[[field]]) && 
+                !is.na(values$originalMetadata[[field]]) && 
+                nchar(trimws(values$originalMetadata[[field]])) > 0) {
+              current_description <- trimws(values$originalMetadata[[field]])
+              break
+            }
+          }
+          
+          # Remove "Date is approximate" from current description for comparison
+          current_description_clean <- gsub("\\s*\\.?\\s*Date is approximate\\.?\\s*", "", current_description, ignore.case = TRUE)
+          current_description_clean <- trimws(current_description_clean)
+          
+          new_description <- trimws(input$description %||% "")
+          
+          if (current_description_clean != new_description) {
+            changes_detected <- TRUE
+          }
+        } else {
+          # If no metadata exists, consider it a change if description is provided
+          if (nchar(trimws(input$description %||% "")) > 0) {
+            changes_detected <- TRUE
+          }
+        }
+        
+        # Check approximate date flag changes
+        if (!is.null(values$originalMetadata)) {
+          current_approximate <- FALSE
+          desc_fields <- c("ImageDescription", "UserComment", "Caption", "Description", "Subject")
+          
+          for (field in desc_fields) {
+            if (!is.null(values$originalMetadata[[field]]) && 
+                grepl("date is approximate|approximate date", values$originalMetadata[[field]], ignore.case = TRUE)) {
+              current_approximate <- TRUE
+              break
+            }
+          }
+          
+          if (current_approximate != input$dateApproximate) {
+            changes_detected <- TRUE
+          }
+        } else {
+          # If no metadata exists, consider it a change if approximate is checked
+          if (input$dateApproximate) {
+            changes_detected <- TRUE
+          }
+        }
+        
+        # If no changes detected, don't save
+        if (!changes_detected) {
+          showNotification("No Changes Made to Photo. Not Saving.", type = "message")
+          return()
+        }
+        
+        # Proceed with saving if changes were detected
         # Prepare metadata
-        new_description <- input$description
+        new_description <- input$description %||% ""
         if (input$dateApproximate && !grepl("Date is approximate", new_description, ignore.case = TRUE)) {
           new_description <- paste(new_description, "Date is approximate", sep = if(nchar(new_description) > 0) ". " else "")
         }
@@ -402,26 +589,38 @@ server <- function(input, output, session) {
         # Combine date and time
         datetime_string <- paste(input$creationDate, input$creationTime)
         
-        # Handle file renaming
+        # Handle file renaming with duplicate checking
         old_path <- values$currentPhoto
-        new_filename <- input$fileName
-        if (!grepl("\\.", new_filename)) {
-          new_filename <- paste0(new_filename, ".", tools::file_ext(old_path))
-        }
-        new_path <- file.path(dirname(old_path), new_filename)
+        new_filename_final <- new_filename
         
-        if (old_path != new_path && file.exists(old_path)) {
-          success <- file.rename(old_path, new_path)
+        # Create desired new path
+        desired_path <- file.path(dirname(old_path), new_filename_final)
+        
+        # Generate unique filename if needed
+        final_path <- generateUniqueFilename(desired_path, old_path)
+        
+        # Rename file if path changed
+        if (old_path != final_path && file.exists(old_path)) {
+          success <- file.rename(old_path, final_path)
           if (success) {
-            values$currentPhoto <- new_path
-            values$photoFiles[values$currentPhotoIndex] <- new_path
+            values$currentPhoto <- final_path
+            values$photoFiles[values$currentPhotoIndex] <- final_path
+            
+            # Update filename input to reflect the actual filename used
+            actual_filename <- basename(final_path)
+            if (actual_filename != new_filename_final) {
+              updateTextInput(session, "fileName", value = actual_filename)
+              showNotification(paste("File renamed to", actual_filename, "to avoid duplicate"), type = "message")
+            } else {
+              showNotification("File renamed successfully", type = "message")
+            }
           } else {
             showNotification("Failed to rename file", type = "error")
-            return()
+            final_path <- old_path
           }
         }
         
-        # Use exiftool to write metadata
+        # Use exiftool to write metadata if available
         if (Sys.which("exiftool") != "") {
           cmd_parts <- c("exiftool", "-overwrite_original")
           
@@ -434,49 +633,40 @@ server <- function(input, output, session) {
           if (!is.null(input$latitude) && !is.null(input$longitude) && 
               !is.na(input$latitude) && !is.na(input$longitude) &&
               is.numeric(input$latitude) && is.numeric(input$longitude)) {
-            cmd_parts <- c(cmd_parts, paste0('-GPSLatitude=', input$latitude))
-            cmd_parts <- c(cmd_parts, paste0('-GPSLongitude=', input$longitude))
             
-            # Set GPS reference based on coordinate signs
+            # Set latitude with correct reference
             lat_ref <- if(input$latitude >= 0) "N" else "S"
-            lon_ref <- if(input$longitude >= 0) "E" else "W"
+            lng_ref <- if(input$longitude >= 0) "E" else "W"
+            
+            cmd_parts <- c(cmd_parts, paste0('-GPSLatitude=', abs(input$latitude)))
+            cmd_parts <- c(cmd_parts, paste0('-GPSLongitude=', abs(input$longitude)))
             cmd_parts <- c(cmd_parts, paste0('-GPSLatitudeRef=', lat_ref))
-            cmd_parts <- c(cmd_parts, paste0('-GPSLongitudeRef=', lon_ref))
+            cmd_parts <- c(cmd_parts, paste0('-GPSLongitudeRef=', lng_ref))
           }
           
           # Set description
           if (nchar(new_description) > 0) {
-            # Escape quotes in description
-            escaped_description <- gsub('"', '\\"', new_description)
-            cmd_parts <- c(cmd_parts, paste0('-ImageDescription="', escaped_description, '"'))
+            cmd_parts <- c(cmd_parts, paste0('-ImageDescription="', new_description, '"'))
+            cmd_parts <- c(cmd_parts, paste0('-UserComment="', new_description, '"'))
           }
           
-          # Add the file path
           cmd_parts <- c(cmd_parts, shQuote(values$currentPhoto))
           
           # Execute the command
-          cmd_string <- paste(cmd_parts, collapse = " ")
-          result <- system(cmd_string, intern = TRUE)
+          result <- system(paste(cmd_parts, collapse = " "), intern = TRUE)
           
-          # Check if command was successful
-          if (length(result) == 0 || !any(grepl("error", result, ignore.case = TRUE))) {
-            showNotification("Metadata saved successfully!", type = "message")
-          } else {
-            showNotification(paste("exiftool warning:", paste(result, collapse = " ")), type = "warning")
-          }
-          
+          showNotification("Metadata saved successfully!", type = "message")
         } else {
-          showNotification("exiftool not found. Please install exiftool to save metadata to files.", type = "warning")
+          showNotification("exiftool not found. Install exiftool to save metadata to files.", type = "warning")
         }
         
       }, error = function(e) {
-        showNotification(paste("Error saving metadata:", e$message), type = "error")
+        showNotification(paste("Error saving metadata:", as.character(e$message)), type = "error")
       })
     }
-  }
-  # Location search
+  }  # Location search
   observeEvent(input$searchLocation, {
-    if (nchar(input$locationSearch) > 0) {
+    if (nchar(input$locationSearch %||% "") > 0) {
       # Simple geocoding using Nominatim (OpenStreetMap)
       tryCatch({
         url <- paste0("https://nominatim.openstreetmap.org/search?format=json&q=", 
@@ -490,7 +680,7 @@ server <- function(input, output, session) {
           updateNumericInput(session, "latitude", value = lat)
           updateNumericInput(session, "longitude", value = lon)
           
-          showNotification("Location found!", type = "success")
+          showNotification("Location found!", type = "message")
         } else {
           showNotification("Location not found. Try a different search term.", type = "warning")
         }
@@ -503,17 +693,17 @@ server <- function(input, output, session) {
   # Outputs
   output$currentFolder <- renderText({
     if (!is.null(values$photoFolder)) {
-      paste("Current folder:", values$photoFolder)
+      basename(values$photoFolder)
     } else {
-      "No folder selected"
+      "None"
     }
   })
   
   output$photoCounter <- renderText({
     if (!is.null(values$photoFiles)) {
-      paste("Photo", values$currentPhotoIndex, "of", length(values$photoFiles))
+      paste(values$currentPhotoIndex, "/", length(values$photoFiles))
     } else {
-      ""
+      "0/0"
     }
   })
   
@@ -522,8 +712,8 @@ server <- function(input, output, session) {
       list(src = values$currentPhoto,
            alt = "Photo preview",
            width = "100%",
-           height = "400px",
-           style = "object-fit: contain;")
+           height = "330px",
+           style = "object-fit: contain; border: 1px solid #dee2e6; border-radius: 0.375rem;")
     } else {
       list(src = "",
            alt = "No photo selected")
@@ -565,14 +755,16 @@ server <- function(input, output, session) {
     if (!is.null(values$originalMetadata)) {
       metadata_text <- c(
         paste("File:", basename(values$currentPhoto)),
-        paste("Original DateTime:", values$originalMetadata$DateTime %||% "Not available"),
-        paste("GPS Coordinates:", 
+        paste("DateTime:", values$originalMetadata$DateTime %||% "N/A"),
+        paste("GPS:", 
               if (!is.null(values$originalMetadata$GPSLatitude) && !is.null(values$originalMetadata$GPSLongitude)) {
-                paste(values$originalMetadata$GPSLatitude, ",", values$originalMetadata$GPSLongitude)
+                lat_display <- convertGPSCoordinate(values$originalMetadata$GPSLatitude, values$originalMetadata$GPSLatitudeRef)
+                lng_display <- convertGPSCoordinate(values$originalMetadata$GPSLongitude, values$originalMetadata$GPSLongitudeRef)
+                paste(round(lat_display, 4), ",", round(lng_display, 4))
               } else {
-                "Not available"
+                "N/A"
               }),
-        paste("Description:", values$originalMetadata$ImageDescription %||% "Not available"),
+        paste("Description:", substr(values$originalMetadata$ImageDescription %||% "N/A", 1, 50)),
         paste("Camera:", values$originalMetadata$Make %||% "Unknown", values$originalMetadata$Model %||% "")
       )
       paste(metadata_text, collapse = "\n")
