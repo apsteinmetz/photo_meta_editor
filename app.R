@@ -78,6 +78,125 @@ ui <- page_navbar(
     danger = "#e74c3c"
   ),
   
+  # Add custom CSS and JavaScript for the popup in header
+  header = tags$head(
+    tags$style(HTML("
+      .photo-popup {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 9999;
+        background: white;
+        border: 2px solid #ccc;
+        border-radius: 8px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        max-width: 90vw;
+        max-height: 90vh;
+        overflow: auto;
+        display: none;
+      }
+      
+      .photo-popup.show {
+        display: block;
+      }
+      
+      .photo-popup-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.5);
+        z-index: 9998;
+        display: none;
+      }
+      
+      .photo-popup-overlay.show {
+        display: block;
+      }
+      
+      .photo-popup-header {
+        padding: 10px 15px;
+        border-bottom: 1px solid #ddd;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #f8f9fa;
+        border-radius: 6px 6px 0 0;
+      }
+      
+      .photo-popup-content {
+        padding: 15px;
+        text-align: center;
+      }
+      
+      .photo-popup img {
+        max-width: 100%;
+        max-height: 80vh;
+        object-fit: contain;
+      }
+      
+      .clickable-image {
+        cursor: pointer;
+      }
+      
+      .clickable-image:hover {
+        opacity: 0.9;
+        transform: scale(1.02);
+        transition: all 0.2s ease;
+      }
+      
+      .photo-preview-container {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 480px;
+        border: 1px solid #dee2e6;
+        border-radius: 0.375rem;
+        background-color: #f8f9fa;
+      }
+    ")),
+    
+    tags$script(HTML("
+      $(document).ready(function() {
+        // Show popup
+        function showPhotoPopup() {
+          $('.photo-popup-overlay').addClass('show');
+          $('.photo-popup').addClass('show');
+        }
+        
+        // Hide popup
+        function hidePhotoPopup() {
+          $('.photo-popup-overlay').removeClass('show');
+          $('.photo-popup').removeClass('show');
+        }
+        
+        // Handle image click
+        $(document).on('click', '.clickable-image', function() {
+          showPhotoPopup();
+          Shiny.setInputValue('photoClicked', Math.random());
+        });
+        
+        // Handle close button click
+        $(document).on('click', '#closePhotoPopupBtn', function() {
+          hidePhotoPopup();
+        });
+        
+        // Handle overlay click
+        $(document).on('click', '.photo-popup-overlay', function() {
+          hidePhotoPopup();
+        });
+        
+        // Prevent popup content clicks from closing the popup
+        $(document).on('click', '.photo-popup', function(e) {
+          e.stopPropagation();
+        });
+      });
+    "))
+  ),
+  
   nav_panel(
     title = "Photo Manager",
     icon = icon("camera"),
@@ -145,10 +264,13 @@ ui <- page_navbar(
         card(
           full_screen = FALSE,
           height = "550px",
-          card_header("Photo Preview"),
+          card_header("Photo Preview (Click to Enlarge)"),
           card_body(
             padding = "8px",
-            imageOutput("photoPreview", height = "480px")
+            div(
+              class = "photo-preview-container clickable-image",
+              imageOutput("photoPreview", height = "480px")
+            )
           )
         ),
         
@@ -169,7 +291,7 @@ ui <- page_navbar(
           height = "550px",
           card_header("Metadata Editor"),
           card_body(
-            padding = "1px",
+            padding = "15px",
             
             textInput("fileName", "File Name:", value = ""),
             
@@ -190,7 +312,7 @@ ui <- page_navbar(
               nav_panel(
                 "Search",
                 div(
-                  style = "padding: 1px;",
+                  style = "padding: 15px;",
                   textInput("locationSearch", "Search Location:", 
                             placeholder = "Enter city, address, or landmark",
                             width = "100%"),
@@ -210,7 +332,7 @@ ui <- page_navbar(
             ),
             
             # Add some space before coordinates
-            div(style = "margin-top: 1px;",
+            div(style = "margin-top: 15px;",
                 layout_columns(
                   col_widths = c(6, 6),
                   fill = FALSE,
@@ -254,6 +376,38 @@ ui <- page_navbar(
           )
         )
       )
+    )
+  ),
+  # nav panel "about" page
+  nav_panel(
+    title = "About",
+    icon = icon("info-circle"),
+    card(
+      full_screen = FALSE,
+      height = "300px",
+      card_header("About this App"),
+      card_body(
+        p("This app allows you to choose a folder containting photos, edit certain photo metadata, date taken, location and descriptive text. The file name can also be changed"),
+        p("Developed by Art Steinmetz using Claude-Sonnet 4."),
+        p("Development facts: 1000 lines of code, 1mm input tokens, $5 in Claude costs, 4 hours of back and forth prompting.")
+      )
+    )
+  ),
+  
+  # Photo popup modal placed in footer to avoid navigation warning
+  footer = div(
+    # Photo popup modal (always present in DOM)
+    div(class = "photo-popup-overlay"),
+    div(class = "photo-popup",
+        div(class = "photo-popup-header",
+            h5("Photo Preview", style = "margin: 0;"),
+            actionButton("closePhotoPopupBtn", "×", 
+                         class = "btn btn-sm", 
+                         style = "font-size: 18px; border: none; background: none; padding: 2px 8px;")
+        ),
+        div(class = "photo-popup-content",
+            imageOutput("photoPopupImage", height = "auto")
+        )
     )
   )
 )
@@ -385,7 +539,7 @@ server <- function(input, output, session) {
     }
   }
   
-  # Directory selection with improved navigation
+  # Directory selection with improved navigation and custom options
   pictures_path <- file.path(Sys.getenv("USERPROFILE"), "Pictures")
   if (!dir.exists(pictures_path)) pictures_path <- normalizePath("~", winslash = "/")
   
@@ -409,7 +563,13 @@ server <- function(input, output, session) {
     root_paths <- c(root_paths, root = "/")
   }
   
-  shinyDirChoose(input, "selectDir", roots = root_paths)
+  # Custom shinyDirChoose with restricted options
+  observe({
+    shinyDirChoose(input, "selectDir", 
+                   roots = root_paths,
+                   allowDirCreate = FALSE,
+                   restrictions = system.file(package = "base"))
+  })
   
   observeEvent(input$selectDir, {
     if (!is.null(input$selectDir)) {
@@ -442,6 +602,12 @@ server <- function(input, output, session) {
       }
     }
   }, ignoreInit = TRUE)
+  
+  # Handle photo click for popup
+  observeEvent(input$photoClicked, {
+    # JavaScript will handle the popup display
+    # This is just to track the event if needed
+  })
   
   # Function to load current photo
   loadCurrentPhoto <- function() {
@@ -751,13 +917,24 @@ server <- function(input, output, session) {
   output$photoPreview <- renderImage({
     if (!is.null(values$currentPhoto) && file.exists(values$currentPhoto)) {
       list(src = values$currentPhoto,
-           alt = "Photo preview",
+           alt = "Photo preview - Click to enlarge",
            width = "100%",
            height = "480px",
            style = "object-fit: contain; border: 1px solid #dee2e6; border-radius: 0.375rem;")
     } else {
       list(src = "",
            alt = "No photo selected")
+    }
+  }, deleteFile = FALSE)
+  
+  # Photo popup image
+  output$photoPopupImage <- renderImage({
+    if (!is.null(values$currentPhoto) && file.exists(values$currentPhoto)) {
+      list(src = values$currentPhoto,
+           alt = "Full size photo preview",
+           style = "max-width: 100%; max-height: 80vh; object-fit: contain;")
+    } else {
+      list(src = "", alt = "")
     }
   }, deleteFile = FALSE)
   
