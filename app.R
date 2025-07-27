@@ -64,23 +64,9 @@ write_exif <- function(path, tags, overwrite_original = TRUE, quiet = TRUE) {
     return(FALSE)
   })
 }
-
-# UI
-ui <- page_navbar(
-  title = "Photo Metadata Manager",
-  theme = bs_theme(
-    version = 5,
-    bootswatch = "flatly",
-    primary = "#3498db",
-    secondary = "#95a5a6",
-    success = "#2ecc71",
-    warning = "#f39c12",
-    danger = "#e74c3c"
-  ),
-  
-  # Add custom CSS and JavaScript for the popup in header
-  header = tags$head(
-    tags$style(HTML("
+# css header for image popup ===================================================
+header_css = tags$head(
+  tags$style(HTML("
       .photo-popup {
         position: fixed;
         top: 50%;
@@ -158,8 +144,8 @@ ui <- page_navbar(
         background-color: #f8f9fa;
       }
     ")),
-    
-    tags$script(HTML("
+  
+  tags$script(HTML("
       $(document).ready(function() {
         // Show popup
         function showPhotoPopup() {
@@ -195,63 +181,210 @@ ui <- page_navbar(
         });
       });
     "))
+)
+
+footer_contents <- div(
+  # Photo popup modal (always present in DOM)
+  div(class = "photo-popup-overlay"),
+  div(class = "photo-popup",
+      div(class = "photo-popup-header",
+          h5("Photo Preview", style = "margin: 0;"),
+          actionButton("closePhotoPopupBtn", "×", 
+                       class = "btn btn-sm", 
+                       style = "font-size: 18px; border: none; background: none; padding: 2px 8px;")
+      ),
+      div(class = "photo-popup-content",
+          imageOutput("photoPopupImage", height = "auto")
+      )
+  )
+)
+
+# sidebar contents =============================================================
+sidebar_contents <-  sidebar(
+  title = "Photos",
+  width = 150,
+  
+  # Folder selection
+  shinyDirButton("selectDir", "Select Folder", 
+                 "Choose folder containing photos",
+                 class = "btn-primary w-100 btn-sm"),
+  
+  br(), br(),
+  
+  # Current folder display
+  card(
+    height = "60px",
+    card_body(
+      padding = "8px",
+      verbatimTextOutput("currentFolder")
+    )
   ),
+  
+  br(),
+  
+  # Navigation controls
+  actionButton("prevPhoto", "Previous", 
+               icon = icon("arrow-left"),
+               class = "btn-outline-secondary btn-sm w-100"),
+  
+  br(),
+  
+  actionButton("nextPhoto", "Next", 
+               icon = icon("arrow-right"),
+               class = "btn-outline-secondary btn-sm w-100"),
+  
+  br(),
+  
+  actionButton("saveMetadata", "Save & Next", 
+               icon = icon("save"),
+               class = "btn-success btn-sm w-100"),
+  
+  br(), br(),
+  
+  # Photo counter
+  card(
+    height = "50px",
+    card_body(
+      padding = "8px",
+      textOutput("photoCounter")
+    )
+  )
+)
+
+# cards ========================================================================
+# Photo preview
+card_preview <- card(
+  full_screen = FALSE,
+  height = "550px",
+  card_header("Photo Preview (Click to Enlarge)"),
+  card_body(
+    padding = "8px",
+    div(
+      class = "photo-preview-container clickable-image",
+      imageOutput("photoPreview", height = "480px")
+    )
+  )
+)
+# Current metadata display
+card_show_metadata <- card(
+  full_screen = FALSE,
+  height = "550px",
+  card_header("Current Photo Info"),
+  card_body(
+    padding = "10px",
+    verbatimTextOutput("currentMetadata")
+  )
+)
+# Metadata editing
+card_edit_metadata <- card(
+  full_screen = FALSE,
+  height = "550px",
+  card_header("Metadata Editor"),
+  card_body(
+    padding = "15px",
+    textInput("fileName", "File Name:", value = ""),
+    layout_columns(
+      col_widths = c(8, 4),
+      fill = FALSE,
+      dateInput("photoTakenDate", "Photo Taken Date:", value = Sys.Date()),
+      checkboxInput("dateApproximate", "Approximate", value = FALSE)
+    ),
+    timeInput("photoTakenTime", "Photo Taken Time:", value = "12:00:00"),
+    h6("Location", style = "margin-top: 15px; margin-bottom: 10px;"),
+    # Location tabs
+    navset_tab(
+      id = "locationTabs",
+      nav_panel(
+        "Search",
+        div(
+          style = "padding: 15px;",
+          textInput("locationSearch", "Search Location:", 
+                    placeholder = "Enter city, address, or landmark",
+                    width = "100%"),
+          br(),
+          actionButton("searchLocation", "Search", 
+                       icon = icon("search"),
+                       class = "btn-outline-primary btn-sm")
+        )
+      ),
+      nav_panel(
+        "Map Click",
+        div(
+          style = "padding: 15px;",
+          p("Click on the map below to set location", class = "text-muted")
+        )
+      )
+    ),
+    
+    # Add some space before coordinates
+    div(style = "margin-top: 15px;",
+        layout_columns(
+          col_widths = c(6, 6),
+          fill = FALSE,
+          numericInput("latitude", "Latitude:", value = NULL, step = 0.000001),
+          numericInput("longitude", "Longitude:", value = NULL, step = 0.000001)
+        )
+    )
+  )
+)
+
+# Description card
+card_description <- card(
+  full_screen = FALSE,
+  height = "350px",
+  card_header("Description"),
+  card_body(
+    padding = "10px",
+    textAreaInput("description", "", 
+                  placeholder = "Add any additional notes or descriptions",
+                  rows = 12)
+  )
+)
+
+# Map section card
+card_map <- card(
+  full_screen = FALSE,
+  height = "350px",
+  card_header("Location Map"),
+  card_body(
+    padding = "8px",
+    leafletOutput("locationMap", height = "280px")
+  )
+)
+# about card
+card_about <- card(
+  full_screen = FALSE,
+  height = "300px",
+  card_header("About this App"),
+  card_body(
+    p("This app allows you to choose a folder containting photos, edit certain photo metadata, date taken, location and descriptive text. The file name can also be changed"),
+    p("Developed by Art Steinmetz using Anthropic Claude-Sonnet 4."),
+    p("Development facts: 1000 lines of code, 1mm input tokens, $5 in Claude costs, 4 hours of back and forth prompting.")
+  )
+)
+
+# UI ===========================================================================
+ui <- page_navbar(
+  title = "Photo Metadata Manager",
+  theme = bs_theme(
+    version = 5,
+    bootswatch = "flatly",
+    primary = "#3498db",
+    secondary = "#95a5a6",
+    success = "#2ecc71",
+    warning = "#f39c12",
+    danger = "#e74c3c"
+  ),
+  
+  # Add custom CSS and JavaScript for the popup in header
+  header = header_css,
   
   nav_panel(
     title = "Photo Manager",
     icon = icon("camera"),
     
     page_sidebar(
-      sidebar = sidebar(
-        title = "Photos",
-        width = 150,
-        
-        # Folder selection
-        shinyDirButton("selectDir", "Select Folder", 
-                       "Choose folder containing photos",
-                       class = "btn-primary w-100 btn-sm"),
-        
-        br(), br(),
-        
-        # Current folder display
-        card(
-          height = "60px",
-          card_body(
-            padding = "8px",
-            verbatimTextOutput("currentFolder")
-          )
-        ),
-        
-        br(),
-        
-        # Navigation controls
-        actionButton("prevPhoto", "Previous", 
-                     icon = icon("arrow-left"),
-                     class = "btn-outline-secondary btn-sm w-100"),
-        
-        br(),
-        
-        actionButton("nextPhoto", "Next", 
-                     icon = icon("arrow-right"),
-                     class = "btn-outline-secondary btn-sm w-100"),
-        
-        br(),
-        
-        actionButton("saveMetadata", "Save & Next", 
-                     icon = icon("save"),
-                     class = "btn-success btn-sm w-100"),
-        
-        br(), br(),
-        
-        # Photo counter
-        card(
-          height = "50px",
-          card_body(
-            padding = "8px",
-            textOutput("photoCounter")
-          )
-        )
-      ),
+      sidebar = sidebar_contents,
       
       # Main content area
       # Photo preview, metadata display, and metadata editing row
@@ -259,89 +392,9 @@ ui <- page_navbar(
         col_widths = c(5, 3, 4),
         fill = FALSE,
         gap = "10px",
-        
-        # Photo preview
-        card(
-          full_screen = FALSE,
-          height = "550px",
-          card_header("Photo Preview (Click to Enlarge)"),
-          card_body(
-            padding = "8px",
-            div(
-              class = "photo-preview-container clickable-image",
-              imageOutput("photoPreview", height = "480px")
-            )
-          )
-        ),
-        
-        # Current metadata display
-        card(
-          full_screen = FALSE,
-          height = "550px",
-          card_header("Current Photo Info"),
-          card_body(
-            padding = "10px",
-            verbatimTextOutput("currentMetadata")
-          )
-        ),
-        
-        # Metadata editing
-        card(
-          full_screen = FALSE,
-          height = "550px",
-          card_header("Metadata Editor"),
-          card_body(
-            padding = "15px",
-            
-            textInput("fileName", "File Name:", value = ""),
-            
-            layout_columns(
-              col_widths = c(8, 4),
-              fill = FALSE,
-              dateInput("photoTakenDate", "Photo Taken Date:", value = Sys.Date()),
-              checkboxInput("dateApproximate", "Approximate", value = FALSE)
-            ),
-            
-            timeInput("photoTakenTime", "Photo Taken Time:", value = "12:00:00"),
-            
-            h6("Location", style = "margin-top: 15px; margin-bottom: 10px;"),
-            
-            # Location tabs
-            navset_tab(
-              id = "locationTabs",
-              nav_panel(
-                "Search",
-                div(
-                  style = "padding: 15px;",
-                  textInput("locationSearch", "Search Location:", 
-                            placeholder = "Enter city, address, or landmark",
-                            width = "100%"),
-                  br(),
-                  actionButton("searchLocation", "Search", 
-                               icon = icon("search"),
-                               class = "btn-outline-primary btn-sm")
-                )
-              ),
-              nav_panel(
-                "Map Click",
-                div(
-                  style = "padding: 15px;",
-                  p("Click on the map below to set location", class = "text-muted")
-                )
-              )
-            ),
-            
-            # Add some space before coordinates
-            div(style = "margin-top: 15px;",
-                layout_columns(
-                  col_widths = c(6, 6),
-                  fill = FALSE,
-                  numericInput("latitude", "Latitude:", value = NULL, step = 0.000001),
-                  numericInput("longitude", "Longitude:", value = NULL, step = 0.000001)
-                )
-            )
-          )
-        )
+        card_preview,
+        card_show_metadata,
+        card_edit_metadata
       ),
       
       br(),
@@ -352,29 +405,9 @@ ui <- page_navbar(
         fill = FALSE,
         gap = "10px",
         
-        # Description card
-        card(
-          full_screen = FALSE,
-          height = "350px",
-          card_header("Description"),
-          card_body(
-            padding = "10px",
-            textAreaInput("description", "", 
-                          placeholder = "Add any additional notes or descriptions",
-                          rows = 12)
-          )
-        ),
-        
-        # Map section
-        card(
-          full_screen = FALSE,
-          height = "350px",
-          card_header("Location Map"),
-          card_body(
-            padding = "8px",
-            leafletOutput("locationMap", height = "280px")
-          )
-        )
+        # Description
+        card_description,
+        card_map,
       )
     )
   ),
@@ -382,37 +415,14 @@ ui <- page_navbar(
   nav_panel(
     title = "About",
     icon = icon("info-circle"),
-    card(
-      full_screen = FALSE,
-      height = "300px",
-      card_header("About this App"),
-      card_body(
-        p("This app allows you to choose a folder containting photos, edit certain photo metadata, date taken, location and descriptive text. The file name can also be changed"),
-        p("Developed by Art Steinmetz using Claude-Sonnet 4."),
-        p("Development facts: 1000 lines of code, 1mm input tokens, $5 in Claude costs, 4 hours of back and forth prompting.")
-      )
-    )
+    card_about
   ),
   
   # Photo popup modal placed in footer to avoid navigation warning
-  footer = div(
-    # Photo popup modal (always present in DOM)
-    div(class = "photo-popup-overlay"),
-    div(class = "photo-popup",
-        div(class = "photo-popup-header",
-            h5("Photo Preview", style = "margin: 0;"),
-            actionButton("closePhotoPopupBtn", "×", 
-                         class = "btn btn-sm", 
-                         style = "font-size: 18px; border: none; background: none; padding: 2px 8px;")
-        ),
-        div(class = "photo-popup-content",
-            imageOutput("photoPopupImage", height = "auto")
-        )
-    )
-  )
+  footer = footer_contents
 )
 
-# Server
+# Server =======================================================================
 server <- function(input, output, session) {
   # Reactive values
   values <- reactiveValues(
