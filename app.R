@@ -10,152 +10,8 @@ library(dplyr)
 library(lubridate)
 
 
-# css header and footer ===================================================
-# this is css code to show the image popup
-header_css = tags$head(
-  tags$style(HTML(
-    "
-      .photo-popup {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        z-index: 9999;
-        background: white;
-        border: 2px solid #ccc;
-        border-radius: 8px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-        max-width: 90vw;
-        max-height: 90vh;
-        overflow: auto;
-        display: none;
-      }
-      
-      .photo-popup.show {
-        display: block;
-      }
-      
-      .photo-popup-overlay {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0,0,0,0.5);
-        z-index: 9998;
-        display: none;
-      }
-      
-      .photo-popup-overlay.show {
-        display: block;
-      }
-      
-      .photo-popup-header {
-        padding: 10px 15px;
-        border-bottom: 1px solid #ddd;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        background: #f8f9fa;
-        border-radius: 6px 6px 0 0;
-      }
-      
-      .photo-popup-content {
-        padding: 15px;
-        text-align: center;
-      }
-      
-      .photo-popup img {
-        max-width: 100%;
-        max-height: 80vh;
-        object-fit: contain;
-      }
-      
-      .clickable-image {
-        cursor: pointer;
-      }
-      
-      .clickable-image:hover {
-        opacity: 0.9;
-        transform: scale(1.02);
-        transition: all 0.2s ease;
-      }
-      
-      .photo-preview-container {
-        position: relative;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        height: 480px;
-        border: 1px solid #dee2e6;
-        border-radius: 0.375rem;
-        background-color: #f8f9fa;
-      }
-    "
-  )),
-
-  tags$script(HTML(
-    "
-      $(document).ready(function() {
-        // Show popup
-        function showPhotoPopup() {
-          $('.photo-popup-overlay').addClass('show');
-          $('.photo-popup').addClass('show');
-        }
-        
-        // Hide popup
-        function hidePhotoPopup() {
-          $('.photo-popup-overlay').removeClass('show');
-          $('.photo-popup').removeClass('show');
-        }
-        
-        // Handle image click
-        $(document).on('click', '.clickable-image', function() {
-          showPhotoPopup();
-          Shiny.setInputValue('photoClicked', Math.random());
-        });
-        
-        // Handle close button click
-        $(document).on('click', '#closePhotoPopupBtn', function() {
-          hidePhotoPopup();
-        });
-        
-        // Handle overlay click
-        $(document).on('click', '.photo-popup-overlay', function() {
-          hidePhotoPopup();
-        });
-        
-        // Prevent popup content clicks from closing the popup
-        $(document).on('click', '.photo-popup', function(e) {
-          e.stopPropagation();
-        });
-      });
-    "
-  ))
-)
-
-footer_contents <- div(
-  # Photo popup modal (always present in DOM)
-  div(class = "photo-popup-overlay"),
-  div(
-    class = "photo-popup",
-    div(
-      class = "photo-popup-header",
-      h5("Photo Preview", style = "margin: 0;"),
-      actionButton(
-        "closePhotoPopupBtn",
-        "×",
-        class = "btn btn-sm",
-        style = "font-size: 18px; border: none; background: none; padding: 2px 8px;"
-      )
-    ),
-    div(
-      class = "photo-popup-content",
-      imageOutput("photoPopupImage", height = "auto")
-    )
-  )
-)
-
+# # css header and footer ===================================================
+# # this is css code to show the image popup
 # sidebar contents =============================================================
 sidebar_contents <- sidebar(
   title = "Photos",
@@ -223,10 +79,13 @@ card_preview <- card(
   height = "550px",
   card_header("Photo Preview (Click to Enlarge)"),
   card_body(
-    padding = "8px",
+    actionLink(
+      "enlarge",
+    
     div(
       class = "photo-preview-container clickable-image",
       imageOutput("photoPreview", height = "480px")
+    )
     )
   )
 )
@@ -248,7 +107,7 @@ card_edit_metadata <- card(
   card_header("Metadata Editor"),
   card_body(
     padding = "15px",
-    
+
     # Top row: File name and copy button
     layout_columns(
       col_widths = c(6, 3, 3),
@@ -267,7 +126,7 @@ card_edit_metadata <- card(
         textOutput("selectedSourceFile", inline = TRUE)
       )
     ),
-    
+
     # Second row: Date, time, and approximate checkbox
     layout_columns(
       col_widths = c(4, 4, 4),
@@ -279,10 +138,10 @@ card_edit_metadata <- card(
         checkboxInput("dateApproximate", "Date is Approximate", value = FALSE)
       )
     ),
-    
+
     # Third row: Location section
     h6("Location", style = "margin-top: 20px; margin-bottom: 15px;"),
-    
+
     layout_columns(
       col_widths = c(4, 4, 4),
       fill = FALSE,
@@ -386,7 +245,7 @@ ui <- page_navbar(
       # Main content area
       # First row. Photo preview, metadata display, and metadata editing.
       layout_columns(
-        col_widths = c(4, 2,6),
+        col_widths = c(4, 2, 6),
         fill = FALSE,
         gap = "10px",
         card_preview,
@@ -412,7 +271,7 @@ ui <- page_navbar(
   ),
   # Photo popup modal placed in footer to avoid navigation warning
   footer = footer_contents
-  )
+)
 
 # Server =======================================================================
 server <- function(input, output, session) {
@@ -423,81 +282,98 @@ server <- function(input, output, session) {
     currentPhotoIndex = 1,
     currentPhoto = NULL,
     originalMetadata = NULL,
-    sourceFile = NULL  # Add this line
+    sourceFile = NULL # Add this line
   )
-  
+
   # Custom write_exif function using exifr::exiftool_call()
   write_exif <- function(path, tags, overwrite_original = TRUE, quiet = TRUE) {
     # Validate inputs
     if (!file.exists(path)) {
       stop("File does not exist: ", path)
     }
-    
+
     if (!is.list(tags) || length(tags) == 0) {
       stop("Tags must be a non-empty list")
     }
-    
+
     # Build exiftool arguments
     args <- character(0)
-    
+
     # Add overwrite original flag if requested
     if (overwrite_original) {
       args <- c(args, "-overwrite_original")
     }
-    
+
     # List of tags that may generate warnings but still work
     warning_tags <- c("GPSPosition")
-    
+
     # Add each tag/value pair
     for (tag_name in names(tags)) {
       tag_value <- tags[[tag_name]]
-      
+
       # Handle empty/NULL values (clear the tag)
-      if (is.null(tag_value) || is.na(tag_value) || 
-          (is.character(tag_value) && nchar(trimws(tag_value)) == 0)) {
+      if (
+        is.null(tag_value) ||
+          is.na(tag_value) ||
+          (is.character(tag_value) && nchar(trimws(tag_value)) == 0)
+      ) {
         args <- c(args, paste0("-", tag_name, "="))
       } else {
         # Properly quote values that contain spaces or special characters
-        args <- c(args, paste0("-", tag_name, "=", shQuote(as.character(tag_value))))
+        args <- c(
+          args,
+          paste0("-", tag_name, "=", shQuote(as.character(tag_value)))
+        )
       }
     }
-    
+
     # Add the file path
     args <- c(args, shQuote(path))
-    
+
     # Execute exiftool command
-    tryCatch({
-      result <- exifr::exiftool_call(args = args, quiet = TRUE)  # Always quiet to capture output
-      exit_code <- attr(result, "status")
-      
-      # Filter out known warnings that don't indicate actual failures
-      if (length(result) > 0) {
-        # Remove lines containing warnings about tags that we know work anyway
-        filtered_result <- result[!grepl(paste(paste0("Sorry, ", warning_tags, " is not writable"), collapse = "|"), result, ignore.case = TRUE)]
-        
-        # Only show remaining messages if not in quiet mode
-        if (!quiet && length(filtered_result) > 0) {
-          cat(paste(filtered_result, collapse = "\n"), "\n")
+    tryCatch(
+      {
+        result <- exifr::exiftool_call(args = args, quiet = TRUE) # Always quiet to capture output
+        exit_code <- attr(result, "status")
+
+        # Filter out known warnings that don't indicate actual failures
+        if (length(result) > 0) {
+          # Remove lines containing warnings about tags that we know work anyway
+          filtered_result <- result[
+            !grepl(
+              paste(
+                paste0("Sorry, ", warning_tags, " is not writable"),
+                collapse = "|"
+              ),
+              result,
+              ignore.case = TRUE
+            )
+          ]
+
+          # Only show remaining messages if not in quiet mode
+          if (!quiet && length(filtered_result) > 0) {
+            cat(paste(filtered_result, collapse = "\n"), "\n")
+          }
         }
-      }
-      
-      # Check if the operation was successful (exit code 0 or NULL means success)
-      if (is.null(exit_code) || exit_code == 0) {
-        return(TRUE)
-      } else {
+
+        # Check if the operation was successful (exit code 0 or NULL means success)
+        if (is.null(exit_code) || exit_code == 0) {
+          return(TRUE)
+        } else {
+          if (!quiet) {
+            cat("ExifTool returned non-zero exit status:", exit_code, "\n")
+          }
+          return(FALSE)
+        }
+      },
+      error = function(e) {
         if (!quiet) {
-          cat("ExifTool returned non-zero exit status:", exit_code, "\n")
+          cat("Error calling exiftool:", e$message, "\n")
         }
         return(FALSE)
       }
-      
-    }, error = function(e) {
-      if (!quiet) {
-        cat("Error calling exiftool:", e$message, "\n")
-      }
-      return(FALSE)
-    })
-  }# Function to safely get metadata field with multiple attempts
+    )
+  } # Function to safely get metadata field with multiple attempts
   get_metadata_field <- function(metadata, field_names) {
     if (is.null(metadata)) return(NULL)
 
@@ -712,11 +588,24 @@ server <- function(input, output, session) {
   )
 
   # Handle photo click for popup
-  observeEvent(input$photoClicked, {
-    # JavaScript will handle the popup display
-    # This is just to track the event if needed
+  # Show modal when image is clicked
+  observeEvent(input$enlarge_photo, {
+    req(photo_file())
+    
+    showModal(
+      modalDialog(
+        title = "Photo",
+        img(
+          src = photo_file(),
+          style = "width: 100%; height: auto;"
+        ),
+        size = "l",
+        easyClose = TRUE,
+        footer = modalButton("Close")
+      )
+    )
   })
-
+  
   # Function to load current photo
   loadCurrentPhoto <- function() {
     if (!is.null(values$photoFiles) && length(values$photoFiles) > 0) {
@@ -1132,7 +1021,7 @@ server <- function(input, output, session) {
     deleteFile = FALSE
   )
 
-    # Photo popup image
+  # Photo popup image
   output$photoPopupImage <- renderImage(
     {
       if (!is.null(values$currentPhoto) && file.exists(values$currentPhoto)) {
@@ -1148,19 +1037,15 @@ server <- function(input, output, session) {
     deleteFile = FALSE
   )
 
-  # Add this to your server function
-  
-  # File picker for copying metadata
-  # File picker for copying metadata
   # File picker for copying metadata - dynamic roots based on current folder
   observe({
     # Safely check if photoFolder exists and is valid
-    folder_is_valid <- !is.null(values$photoFolder) && 
-      length(values$photoFolder) > 0 && 
-      !is.na(values$photoFolder) && 
-      nchar(values$photoFolder) > 0 && 
+    folder_is_valid <- !is.null(values$photoFolder) &&
+      length(values$photoFolder) > 0 &&
+      !is.na(values$photoFolder) &&
+      nchar(values$photoFolder) > 0 &&
       dir.exists(values$photoFolder)
-    
+
     if (folder_is_valid) {
       # Create roots with current folder as primary option
       current_roots <- c(
@@ -1168,131 +1053,178 @@ server <- function(input, output, session) {
         "Parent Folder" = dirname(values$photoFolder),
         root_paths
       )
-      
-      shinyFileChoose(input, "selectSourceFile", 
-                      roots = current_roots, 
-                      filetypes = c("jpg", "jpeg", "png", "tiff", "tif", "bmp"))
+
+      shinyFileChoose(
+        input,
+        "selectSourceFile",
+        roots = current_roots,
+        filetypes = c("jpg", "jpeg", "png", "tiff", "tif", "bmp")
+      )
     } else {
       # Fallback to original roots if no folder is loaded
-      shinyFileChoose(input, "selectSourceFile", 
-                      roots = root_paths, 
-                      filetypes = c("jpg", "jpeg", "png", "tiff", "tif", "bmp"))
+      shinyFileChoose(
+        input,
+        "selectSourceFile",
+        roots = root_paths,
+        filetypes = c("jpg", "jpeg", "png", "tiff", "tif", "bmp")
+      )
     }
   })
-  
+
   # Handle file selection for copying metadata
   observeEvent(input$selectSourceFile, {
     if (!is.null(input$selectSourceFile)) {
       # Use the appropriate roots for parsing based on current state
-      parse_roots <- if (!is.null(values$photoFolder) && dir.exists(values$photoFolder)) {
+      parse_roots <- if (
+        !is.null(values$photoFolder) && dir.exists(values$photoFolder)
+      ) {
         c("Current Folder" = values$photoFolder, root_paths)
       } else {
         root_paths
       }
-      
+
       source_file_path <- parseFilePaths(parse_roots, input$selectSourceFile)
-      
-      if (nrow(source_file_path) > 0 && file.exists(source_file_path$datapath[1])) {
+
+      if (
+        nrow(source_file_path) > 0 && file.exists(source_file_path$datapath[1])
+      ) {
         # Store the selected file path
         values$sourceFile <- source_file_path$datapath[1]
-        
+
         # Update the display text
         output$selectedSourceFile <- renderText({
           basename(values$sourceFile)
         })
-        
+
         # Copy metadata from the selected file
         copyMetadataFromFile(values$sourceFile)
-        
-        showNotification(paste("Metadata copied from", basename(values$sourceFile)), 
-                         type = "message")
+
+        showNotification(
+          paste("Metadata copied from", basename(values$sourceFile)),
+          type = "message"
+        )
       }
     }
   })
-  
-  
+
   # Function to copy metadata from selected file
   copyMetadataFromFile <- function(source_file_path) {
     if (!file.exists(source_file_path)) {
       showNotification("Source file not found", type = "error")
       return()
     }
-    
-    tryCatch({
-      # Read metadata from source file
-      source_metadata <- read_exif(source_file_path, tags = c("CreateDate", "DateTimeOriginal", 
-                                                              "GPSLatitude", "GPSLongitude", "GPSLatitudeRef", "GPSLongitudeRef",
-                                                              "ImageDescription", "UserComment"))
-      
-      # Copy date/time information
-      datetime_fields <- c("CreateDate", "DateTimeOriginal")
-      for (field in datetime_fields) {
-        datetime_value <- get_metadata_field(source_metadata, field)
-        if (!is.null(datetime_value)) {
-          dt <- parse_exif_datetime(datetime_value)
-          if (!is.na(dt)) {
-            updateDateInput(session, "photoTakenDate", value = as.Date(dt))
-            updateTimeInput(session, "photoTakenTime", value = format(dt, "%H:%M:%S"))
+
+    tryCatch(
+      {
+        # Read metadata from source file
+        source_metadata <- read_exif(
+          source_file_path,
+          tags = c(
+            "CreateDate",
+            "DateTimeOriginal",
+            "GPSLatitude",
+            "GPSLongitude",
+            "GPSLatitudeRef",
+            "GPSLongitudeRef",
+            "ImageDescription",
+            "UserComment"
+          )
+        )
+
+        # Copy date/time information
+        datetime_fields <- c("CreateDate", "DateTimeOriginal")
+        for (field in datetime_fields) {
+          datetime_value <- get_metadata_field(source_metadata, field)
+          if (!is.null(datetime_value)) {
+            dt <- parse_exif_datetime(datetime_value)
+            if (!is.na(dt)) {
+              updateDateInput(session, "photoTakenDate", value = as.Date(dt))
+              updateTimeInput(
+                session,
+                "photoTakenTime",
+                value = format(dt, "%H:%M:%S")
+              )
+              break
+            }
+          }
+        }
+
+        # Copy GPS coordinates
+        gps_lat <- get_metadata_field(source_metadata, "GPSLatitude")
+        gps_lat_ref <- get_metadata_field(source_metadata, "GPSLatitudeRef")
+        gps_lng <- get_metadata_field(source_metadata, "GPSLongitude")
+        gps_lng_ref <- get_metadata_field(source_metadata, "GPSLongitudeRef")
+
+        lat <- convertGPSCoordinate(gps_lat, gps_lat_ref)
+        lng <- convertGPSCoordinate(gps_lng, gps_lng_ref)
+
+        updateNumericInput(session, "latitude", value = lat)
+        updateNumericInput(session, "longitude", value = lng)
+
+        # Copy description (but preserve existing filesystem date)
+        current_description <- input$description %||% ""
+        source_description <- ""
+
+        desc_fields <- c("ImageDescription", "UserComment")
+        for (field in desc_fields) {
+          field_value <- get_metadata_field(source_metadata, field)
+          if (!is.null(field_value) && nchar(trimws(field_value)) > 0) {
+            source_description <- trimws(field_value)
             break
           }
         }
-      }
-      
-      # Copy GPS coordinates
-      gps_lat <- get_metadata_field(source_metadata, "GPSLatitude")
-      gps_lat_ref <- get_metadata_field(source_metadata, "GPSLatitudeRef")
-      gps_lng <- get_metadata_field(source_metadata, "GPSLongitude")
-      gps_lng_ref <- get_metadata_field(source_metadata, "GPSLongitudeRef")
-      
-      lat <- convertGPSCoordinate(gps_lat, gps_lat_ref)
-      lng <- convertGPSCoordinate(gps_lng, gps_lng_ref)
-      
-      updateNumericInput(session, "latitude", value = lat)
-      updateNumericInput(session, "longitude", value = lng)
-      
-      # Copy description (but preserve existing filesystem date)
-      current_description <- input$description %||% ""
-      source_description <- ""
-      
-      desc_fields <- c("ImageDescription", "UserComment")
-      for (field in desc_fields) {
-        field_value <- get_metadata_field(source_metadata, field)
-        if (!is.null(field_value) && nchar(trimws(field_value)) > 0) {
-          source_description <- trimws(field_value)
-          break
+
+        if (nchar(source_description) > 0) {
+          # Remove filesystem date from source description
+          source_desc_clean <- gsub(
+            "\\s*\\.?\\s*File date:[^.]*\\.?",
+            "",
+            source_description
+          )
+          source_desc_clean <- trimws(source_desc_clean)
+
+          # Preserve existing filesystem date from current description
+          filesystem_match <- regmatches(
+            current_description,
+            regexpr("File date:[^.]*", current_description)
+          )
+
+          if (length(filesystem_match) > 0 && nchar(source_desc_clean) > 0) {
+            new_description <- paste(
+              source_desc_clean,
+              filesystem_match,
+              sep = ". "
+            )
+          } else if (length(filesystem_match) > 0) {
+            new_description <- filesystem_match
+          } else {
+            new_description <- source_desc_clean
+          }
+
+          updateTextAreaInput(session, "description", value = new_description)
         }
+
+        # Check if source date is marked as approximate
+        approximate_date <- grepl(
+          "date is approximate|approximate date",
+          source_description,
+          ignore.case = TRUE
+        )
+        updateCheckboxInput(
+          session,
+          "dateApproximate",
+          value = approximate_date
+        )
+      },
+      error = function(e) {
+        showNotification(
+          paste("Error copying metadata:", e$message),
+          type = "error"
+        )
       }
-      
-      if (nchar(source_description) > 0) {
-        # Remove filesystem date from source description
-        source_desc_clean <- gsub("\\s*\\.?\\s*File date:[^.]*\\.?", "", source_description)
-        source_desc_clean <- trimws(source_desc_clean)
-        
-        # Preserve existing filesystem date from current description
-        filesystem_match <- regmatches(current_description, 
-                                       regexpr("File date:[^.]*", current_description))
-        
-        if (length(filesystem_match) > 0 && nchar(source_desc_clean) > 0) {
-          new_description <- paste(source_desc_clean, filesystem_match, sep = ". ")
-        } else if (length(filesystem_match) > 0) {
-          new_description <- filesystem_match
-        } else {
-          new_description <- source_desc_clean
-        }
-        
-        updateTextAreaInput(session, "description", value = new_description)
-      }
-      
-      # Check if source date is marked as approximate
-      approximate_date <- grepl("date is approximate|approximate date", source_description, ignore.case = TRUE)
-      updateCheckboxInput(session, "dateApproximate", value = approximate_date)
-      
-    }, error = function(e) {
-      showNotification(paste("Error copying metadata:", e$message), type = "error")
-    })
+    )
   }
-  
-  
+
   # Output for displaying selected source file
   output$selectedSourceFile <- renderText({
     if (!is.null(values$sourceFile)) {
@@ -1301,7 +1233,7 @@ server <- function(input, output, session) {
       "No file selected"
     }
   })
-  
+
   output$locationMap <- renderLeaflet({
     leaflet() %>%
       addTiles() %>%
