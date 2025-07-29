@@ -234,7 +234,6 @@ ui <- page_navbar(
   ),
 
   # Add custom CSS and JavaScript for the popup in header
-  header = header_css,
   #tab panel to view and edit metadata
   nav_panel(
     title = "Photo Manager",
@@ -269,8 +268,6 @@ ui <- page_navbar(
     icon = icon("info-circle"),
     card_about
   ),
-  # Photo popup modal placed in footer to avoid navigation warning
-  footer = footer_contents
 )
 
 # Server =======================================================================
