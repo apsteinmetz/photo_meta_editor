@@ -25,17 +25,16 @@ sidebar_contents <- sidebar(
     class = "btn-primary w-100 btn-sm"
   ),
 
-  br(),
-  br(),
-
+  verbatimTextOutput("currentFolder"),
   # Current folder display
-  card(
-    height = "60px",
-    card_body(
-      padding = "8px",
-      verbatimTextOutput("currentFolder")
-    )
-  ),
+  # card(
+  #  height = "40px",
+  #  card_body(
+  #    # padding = "8px",
+  #    verbatimTextOutput("currentFolder")
+  #  )
+  # ),
+  
   br(),
   # Navigation controls
   actionButton(
@@ -1016,7 +1015,7 @@ server <- function(input, output, session) {
       title = values$currentPhoto,
       size = "xl",
       easyClose = TRUE,
-      footer = modalButton("Close")
+      footer = NULL
     ))
   })
   # File picker for copying metadata - dynamic roots based on current folder
