@@ -79,15 +79,8 @@ card_preview <- card(
   height = "550px",
   card_header("Photo Preview (Click to Enlarge)"),
   card_body(
-    actionLink(
-      "enlarge",
-    
-    div(
-      class = "photo-preview-container clickable-image",
-      imageOutput("photoPreview", height = "480px")
+      imageOutput("photoPreview", click = "enlarge_photo", height = "480px")
     )
-    )
-  )
 )
 # Current metadata display
 card_show_metadata <- card(
@@ -99,7 +92,6 @@ card_show_metadata <- card(
     verbatimTextOutput("currentMetadata")
   )
 )
-# Metadata editing
 # Metadata editing
 card_edit_metadata <- card(
   full_screen = FALSE,
@@ -130,7 +122,7 @@ card_edit_metadata <- card(
     # Second row: Date, time, and approximate checkbox
     layout_columns(
       col_widths = c(4, 4, 4),
-      fill = FALSE,
+      fill = TRUE,
       dateInput("photoTakenDate", "Photo Taken Date:", value = Sys.Date()),
       timeInput("photoTakenTime", "Photo Taken Time:", value = "12:00:00"),
       div(
@@ -576,33 +568,15 @@ server <- function(input, output, session) {
               type = "warning"
             )
           }
-        } else {
-          showNotification("Invalid directory selected", type = "warning")
-        }
+        }# else {
+        #  cat(values$photoFolder, "\n")
+        #  showNotification("Invalid directory selected", type = "warning")
+        #}
       }
     },
     ignoreInit = TRUE
   )
 
-  # Handle photo click for popup
-  # Show modal when image is clicked
-  observeEvent(input$enlarge_photo, {
-    req(photo_file())
-    
-    showModal(
-      modalDialog(
-        title = "Photo",
-        img(
-          src = photo_file(),
-          style = "width: 100%; height: auto;"
-        ),
-        size = "l",
-        easyClose = TRUE,
-        footer = modalButton("Close")
-      )
-    )
-  })
-  
   # Function to load current photo
   loadCurrentPhoto <- function() {
     if (!is.null(values$photoFiles) && length(values$photoFiles) > 0) {
@@ -1019,7 +993,7 @@ server <- function(input, output, session) {
   )
 
   # Photo popup image
-  output$photoPopupImage <- renderImage(
+  output$img_large <- renderImage(
     {
       if (!is.null(values$currentPhoto) && file.exists(values$currentPhoto)) {
         list(
@@ -1034,6 +1008,17 @@ server <- function(input, output, session) {
     deleteFile = FALSE
   )
 
+  
+  observeEvent(input$enlarge_photo, {
+    req(values$currentPhoto)
+    showModal(modalDialog(
+      imageOutput("img_large"),
+      title = values$currentPhoto,
+      size = "xl",
+      easyClose = TRUE,
+      footer = modalButton("Close")
+    ))
+  })
   # File picker for copying metadata - dynamic roots based on current folder
   observe({
     # Safely check if photoFolder exists and is valid
