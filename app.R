@@ -34,7 +34,7 @@ sidebar_contents <- sidebar(
   #    verbatimTextOutput("currentFolder")
   #  )
   # ),
-  
+
   br(),
   # Navigation controls
   actionButton(
@@ -78,8 +78,8 @@ card_preview <- card(
   height = "550px",
   card_header("Photo Preview (Click to Enlarge)"),
   card_body(
-      imageOutput("photoPreview", click = "enlarge_photo", height = "480px")
-    )
+    imageOutput("photoPreview", click = "enlarge_photo", height = "480px")
+  )
 )
 # Current metadata display
 card_show_metadata <- card(
@@ -363,7 +363,9 @@ server <- function(input, output, session) {
     )
   } # Function to safely get metadata field with multiple attempts
   get_metadata_field <- function(metadata, field_names) {
-    if (is.null(metadata)) return(NULL)
+    if (is.null(metadata)) {
+      return(NULL)
+    }
 
     # If field_names is a single string, convert to vector
     if (is.character(field_names) && length(field_names) == 1) {
@@ -388,11 +390,15 @@ server <- function(input, output, session) {
 
   # Function to convert GPS coordinates with proper sign
   convertGPSCoordinate <- function(coord_value, ref_value) {
-    if (is.null(coord_value) || is.na(coord_value)) return(NULL)
+    if (is.null(coord_value) || is.na(coord_value)) {
+      return(NULL)
+    }
 
     # Convert to numeric if it's not already
     coord_num <- as.numeric(coord_value)
-    if (is.na(coord_num)) return(NULL)
+    if (is.na(coord_num)) {
+      return(NULL)
+    }
 
     # Apply sign based on reference
     if (!is.null(ref_value) && !is.na(ref_value)) {
@@ -422,19 +428,27 @@ server <- function(input, output, session) {
 
     # Try standard EXIF format first (YYYY:MM:DD HH:MM:SS)
     dt <- ymd_hms(gsub(":", "-", datetime_str, fixed = TRUE), quiet = TRUE)
-    if (!is.na(dt)) return(dt)
+    if (!is.na(dt)) {
+      return(dt)
+    }
 
     # Try ISO format
     dt <- ymd_hms(datetime_str, quiet = TRUE)
-    if (!is.na(dt)) return(dt)
+    if (!is.na(dt)) {
+      return(dt)
+    }
 
     # Try with different separators
     dt <- dmy_hms(datetime_str, quiet = TRUE)
-    if (!is.na(dt)) return(dt)
+    if (!is.na(dt)) {
+      return(dt)
+    }
 
     # Try date only formats
     dt <- ymd(gsub(":", "-", datetime_str), quiet = TRUE)
-    if (!is.na(dt)) return(as.POSIXct(paste(dt, "12:00:00")))
+    if (!is.na(dt)) {
+      return(as.POSIXct(paste(dt, "12:00:00")))
+    }
 
     return(NA)
   }
@@ -486,8 +500,9 @@ server <- function(input, output, session) {
 
   # Directory selection with improved navigation and custom options
   pictures_path <- file.path(Sys.getenv("USERPROFILE"), "Pictures")
-  if (!dir.exists(pictures_path))
+  if (!dir.exists(pictures_path)) {
     pictures_path <- normalizePath("~", winslash = "/")
+  }
 
   # Allow navigation to parent folders by including root paths
   root_paths <- c(
@@ -567,7 +582,7 @@ server <- function(input, output, session) {
               type = "warning"
             )
           }
-        }# else {
+        } # else {
         #  cat(values$photoFolder, "\n")
         #  showNotification("Invalid directory selected", type = "warning")
         #}
@@ -1007,7 +1022,6 @@ server <- function(input, output, session) {
     deleteFile = FALSE
   )
 
-  
   observeEvent(input$enlarge_photo, {
     req(values$currentPhoto)
     showModal(modalDialog(
@@ -1330,6 +1344,27 @@ server <- function(input, output, session) {
     } else {
       "No photo selected"
     }
+  })
+
+  # Clean up when session ends (browser closed or tab closed)
+  session$onSessionEnded(function() {
+    # Clean up temp directory if it exists (cloud mode)
+    # Use isolate() to access reactive values in callback
+    temp_dir <- isolate(values$tempDir)
+    if (!is.null(temp_dir) && dir.exists(temp_dir)) {
+      tryCatch(
+        {
+          unlink(temp_dir, recursive = TRUE)
+        },
+        error = function(e) {
+          # Silently fail if cleanup doesn't work
+        }
+      )
+    }
+
+    # Note: stopApp() is commented out as it may not be desired in all contexts
+    # Uncomment the following line if you want the app to stop when browser closes
+    stopApp()
   })
 }
 
