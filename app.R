@@ -9,6 +9,12 @@ library(shinyWidgets)
 library(dplyr)
 library(lubridate)
 
+# Try to load elmer for AI features (optional)
+ai_available <- requireNamespace("ellmer", quietly = TRUE)
+if (ai_available) {
+  library(ellmer)
+}
+
 
 # # css header and footer ===================================================
 # # this is css code to show the image popup
@@ -94,7 +100,7 @@ card_show_metadata <- card(
 # Metadata editing
 card_edit_metadata <- card(
   full_screen = FALSE,
-  height = "550px",
+  height = "400px",
   card_header("Metadata Editor"),
   card_body(
     padding = "15px",
@@ -185,6 +191,40 @@ card_description <- card(
   )
 )
 
+# AI Date Estimation card
+card_ai_date <- card(
+  full_screen = FALSE,
+  height = "350px",
+  card_header(
+    div(
+      style = "display: flex; align-items: center; gap: 8px;",
+      icon("magic"),
+      "AI Date Estimation"
+    )
+  ),
+  card_body(
+    padding = "15px",
+    textInput(
+      "aiContext",
+      "Additional Context (optional):",
+      placeholder = "e.g., 'This is my grandfather' or 'Photo taken in New York'"
+    ),
+    layout_columns(
+      col_widths = c(5, 4, 3),
+      fill = FALSE,
+      actionButton(
+        "estimateDate",
+        "Estimate Date with AI",
+        icon = icon("magic"),
+        class = "btn-info btn-sm w-100"
+      ),
+      uiOutput("aiResultButton"),
+      uiOutput("aiApplyButton")
+    ),
+    uiOutput("aiSpinner")
+  )
+)
+
 # Map section card
 card_map <- card(
   full_screen = FALSE,
@@ -243,12 +283,13 @@ ui <- page_navbar(
         card_edit_metadata
       ),
       br(),
-      # Second row. Description metadata and Map
+      # Second row. Description metadata, AI date, and Map
       layout_columns(
-        col_widths = c(4, 8),
+        col_widths = c(3, 3, 6),
         fill = FALSE,
         gap = "10px",
         card_description,
+        card_ai_date,
         card_map,
       )
     )
@@ -270,7 +311,10 @@ server <- function(input, output, session) {
     currentPhotoIndex = 1,
     currentPhoto = NULL,
     originalMetadata = NULL,
-    sourceFile = NULL # Add this line
+    sourceFile = NULL, # Add this line
+    aiResult = NULL, # Full AI response text
+    aiEstimatedDate = NULL, # Parsed date from AI response
+    aiRunning = FALSE # TRUE while AI query is in flight
   )
 
   # Custom write_exif function using exifr::exiftool_call()
@@ -596,6 +640,9 @@ server <- function(input, output, session) {
     if (!is.null(values$photoFiles) && length(values$photoFiles) > 0) {
       current_file <- values$photoFiles[values$currentPhotoIndex]
       values$currentPhoto <- current_file
+      # Clear AI results from previous photo
+      values$aiResult <- NULL
+      values$aiEstimatedDate <- NULL
 
       # Load existing metadata
       tryCatch(
@@ -970,6 +1017,232 @@ server <- function(input, output, session) {
         }
       )
     }
+  })
+
+  # AI spinner output — driven reactively by aiRunning / aiResult flags
+  output$aiSpinner <- renderUI({
+    if (isTRUE(values$aiRunning)) {
+      div(
+        style = "margin-top: 8px; color: #666; font-size: 0.9em;",
+        icon("spinner", class = "fa-spin"),
+        " Analyzing photo with AI..."
+      )
+    } else if (!is.null(values$aiResult)) {
+      range_match <- regmatches(
+        values$aiResult,
+        regexpr("Date Range:\\s*([^.]+)", values$aiResult)
+      )
+      date_range_text <- if (length(range_match) > 0) {
+        trimws(sub("Date Range:\\s*", "", range_match[1]))
+      } else {
+        "Unknown"
+      }
+      div(
+        style = "margin-top: 10px; padding: 8px; background-color: #e8f4f8; border-left: 3px solid #3498db; border-radius: 3px; font-size: 0.9em;",
+        div(tags$strong("Date Range: "), date_range_text),
+        div(
+          tags$strong("Best Date: "),
+          if (!is.null(values$aiEstimatedDate)) {
+            format(values$aiEstimatedDate, "%B %d, %Y")
+          } else {
+            "Unknown"
+          }
+        )
+      )
+    } else {
+      NULL
+    }
+  })
+
+  # AI result and apply buttons (hidden until AI returns a result)
+  output$aiResultButton <- renderUI({
+    req(values$aiResult)
+    actionButton(
+      "showAiResult",
+      "View Reasoning",
+      icon = icon("eye"),
+      class = "btn-outline-secondary btn-sm w-100"
+    )
+  })
+
+  output$aiApplyButton <- renderUI({
+    req(values$aiEstimatedDate)
+    actionButton(
+      "applyAiDate",
+      "Apply AI Date",
+      icon = icon("check"),
+      class = "btn-success btn-sm w-100"
+    )
+  })
+
+  # Show AI reasoning in a modal
+  observeEvent(input$showAiResult, {
+    req(values$aiResult)
+    showModal(modalDialog(
+      title = "AI Date Estimation",
+      pre(
+        style = "white-space: pre-wrap; font-size: 0.9em;",
+        values$aiResult
+      ),
+      easyClose = TRUE,
+      footer = modalButton("Close")
+    ))
+  })
+
+  # Apply AI estimated date to metadata fields
+  observeEvent(input$applyAiDate, {
+    req(values$aiEstimatedDate)
+    updateDateInput(session, "photoTakenDate", value = values$aiEstimatedDate)
+    updateCheckboxInput(session, "dateApproximate", value = TRUE)
+    # Append AI note to description
+    current_desc <- input$description %||% ""
+    ai_note <- paste0(
+      "AI estimated date: ",
+      format(values$aiEstimatedDate, "%Y-%m-%d")
+    )
+    if (!grepl("AI estimated date", current_desc, fixed = TRUE)) {
+      updated_desc <- if (nchar(trimws(current_desc)) > 0) {
+        paste(current_desc, ai_note, sep = ". ")
+      } else {
+        ai_note
+      }
+      updateTextAreaInput(session, "description", value = updated_desc)
+    }
+    showNotification("AI date applied.", type = "message")
+  })
+
+  # AI Date Estimation
+  observeEvent(input$estimateDate, {
+    req(values$currentPhoto)
+
+    if (!ai_available) {
+      showNotification(
+        "AI features require the 'ellmer' package. Install with: install.packages('ellmer')",
+        type = "warning",
+        duration = 5
+      )
+      return()
+    }
+
+    # Clear previous result and signal spinner to show
+    values$aiResult <- NULL
+    values$aiEstimatedDate <- NULL
+    values$aiRunning <- TRUE
+
+    # Capture values needed in the later callback (avoid reactive context issues)
+    current_photo <- values$currentPhoto
+    ai_context <- input$aiContext
+
+    # Capture the reactive domain so later::later() can update reactive values
+    # and call showNotification() from outside a reactive context
+    domain <- shiny::getDefaultReactiveDomain()
+
+    # Defer the blocking AI call so the spinner renders first
+    later::later(
+      function() {
+        shiny::withReactiveDomain(domain, {
+          tryCatch(
+            {
+              # Build the prompt
+              base_prompt <- paste(
+                "Analyze this photograph and estimate when it was taken based on:",
+                "1. Clothing styles and fashion",
+                "2. Background elements (cars, buildings, technology visible)",
+                "3. Photo quality and characteristics",
+                "4. Any other visible time period indicators",
+                "5. Do not rely on metadata or file information, only visual clues in the image.",
+                "\nProvide your best estimate as a year or range of years (e.g., '1985' or '1975-1980').",
+                "Also provide a single date estimate as the most likely point within the range.",
+                "Also provide a brief explanation of the key indicators you used.",
+                "Format your response EXACTLY as: 'Date Range: [date range]. Best Date: [YYYY-MM-DD]. Reasoning: [explanation]'"
+              )
+
+              # Add user context if provided
+              if (!is.null(ai_context) && nchar(trimws(ai_context)) > 0) {
+                base_prompt <- paste0(
+                  base_prompt,
+                  "\n\nAdditional context provided by user: ",
+                  ai_context
+                )
+              }
+
+              # Create chat and send image
+              chat <- chat_openai(
+                system_prompt = "You are an expert at dating historical photographs based on visual clues."
+              )
+
+              # Read the image and encode it
+              img_data <- base64enc::base64encode(current_photo)
+
+              # Send text prompt and image as separate arguments to chat
+              result <- chat$chat(
+                base_prompt,
+                content_image_url(paste0("data:image/jpeg;base64,", img_data))
+              )
+
+              # Store the full result
+              values$aiResult <- result
+
+              # Parse "Best Date:" (YYYY-MM-DD) from the structured response
+              date_match <- regmatches(
+                result,
+                regexpr("Best Date:\\s*(\\d{4}-\\d{2}-\\d{2})", result)
+              )
+              if (length(date_match) > 0) {
+                estimated_date_str <- trimws(sub(
+                  "Best Date:\\s*",
+                  "",
+                  date_match[1]
+                ))
+                values$aiEstimatedDate <- tryCatch(
+                  as.Date(estimated_date_str),
+                  error = function(e) NULL
+                )
+              } else {
+                # Fallback: first 4-digit year in response
+                year_match2 <- regmatches(
+                  result,
+                  regexpr("\\b(19|20)\\d{2}\\b", result)
+                )
+                values$aiEstimatedDate <- if (length(year_match2) > 0) {
+                  as.Date(paste0(year_match2[1], "-07-01"))
+                } else {
+                  NULL
+                }
+              }
+
+              # Parse "Date Range:" from the structured response
+              range_match <- regmatches(
+                result,
+                regexpr("Date Range:\\s*([^.]+)", result)
+              )
+              date_range_text <- if (length(range_match) > 0) {
+                trimws(sub("Date Range:\\s*", "", range_match[1]))
+              } else {
+                "Unknown"
+              }
+
+              # Signal done — spinner renderUI will reactively update
+              values$aiRunning <- FALSE
+              showNotification(
+                "AI analysis complete! Click 'Apply AI Date' to use the estimate.",
+                type = "message",
+                duration = 4
+              )
+            },
+            error = function(e) {
+              values$aiRunning <- FALSE
+              showNotification(
+                paste("AI estimation failed:", e$message),
+                type = "error",
+                duration = 5
+              )
+            }
+          )
+        }) # end withReactiveDomain
+      },
+      delay = 0
+    )
   })
 
   # Outputs
