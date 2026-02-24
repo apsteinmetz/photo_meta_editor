@@ -1,4 +1,6 @@
 # Load Required libraries ======================================================
+options(shiny.minified = TRUE)
+options(shiny.autoreload = FALSE)
 library(shiny)
 library(bslib)
 library(leaflet)
@@ -9,16 +11,26 @@ library(shinyWidgets)
 library(dplyr)
 library(lubridate)
 
-# Try to load elmer for AI features (optional)
+# Try to load ellmer for AI features (optional)
 ai_available <- requireNamespace("ellmer", quietly = TRUE)
 if (ai_available) {
   library(ellmer)
 }
 
+# Detect whether running locally or on a cloud server
+is_local <- function() {
+  # SHINY_PORT is set by shinyapps.io and Posit Connect
+  # SHINY_SERVER_NAME is set by Shiny Server
+  shiny_port <- Sys.getenv("SHINY_PORT", unset = "")
+  shiny_server <- Sys.getenv("SHINY_SERVER_NAME", unset = "")
+  nchar(shiny_port) == 0 && nchar(shiny_server) == 0
+}
+running_locally <- is_local()
 
 # # css header and footer ===================================================
 # # this is css code to show the image popup
 # sidebar contents =============================================================
+# Local sidebar: folder-based navigation
 sidebar_contents <- sidebar(
   title = "Photos",
   width = 150,
@@ -77,6 +89,78 @@ sidebar_contents <- sidebar(
   )
 )
 
+# Cloud sidebar: upload/download-based workflow
+sidebar_contents_cloud <- sidebar(
+  title = "Photos",
+  width = 170,
+
+  # Upload photos from local disk
+  fileInput(
+    "uploadPhotos",
+    "Upload Photos",
+    multiple = TRUE,
+    accept = c(".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp"),
+    buttonLabel = "Browse...",
+    placeholder = "No files"
+  ),
+
+  br(),
+  # Navigation controls
+  actionButton(
+    "prevPhoto",
+    "Previous",
+    icon = icon("arrow-left"),
+    class = "btn-outline-secondary btn-sm w-100"
+  ),
+  br(),
+  actionButton(
+    "nextPhoto",
+    "Next",
+    icon = icon("arrow-right"),
+    class = "btn-outline-secondary btn-sm w-100"
+  ),
+  br(),
+  actionButton(
+    "saveMetadata",
+    "Save & Next",
+    icon = icon("save"),
+    class = "btn-success btn-sm w-100"
+  ),
+  br(),
+  br(),
+  # Download buttons
+  downloadButton(
+    "downloadCurrent",
+    "Download Photo",
+    class = "btn-primary btn-sm w-100"
+  ),
+  br(),
+  br(),
+  downloadButton(
+    "downloadAll",
+    "Download All (ZIP)",
+    class = "btn-outline-primary btn-sm w-100"
+  ),
+  br(),
+  br(),
+  actionButton(
+    "clearCache",
+    "Clear All Photos",
+    icon = icon("trash"),
+    class = "btn-danger btn-sm w-100"
+  ),
+  br(),
+  br(),
+  # Photo counter
+  card(
+    height = "50px",
+    card_body(
+      padding = "8px",
+      textOutput("photoCounter")
+    )
+  )
+)
+
 # cards ========================================================================
 # Photo preview
 card_preview <- card(
@@ -110,14 +194,7 @@ card_edit_metadata <- card(
       col_widths = c(6, 3, 3),
       fill = FALSE,
       textInput("fileName", "File Name:", value = ""),
-      shinyFilesButton(
-        "selectSourceFile",
-        "Copy From File",
-        "Choose photo to copy metadata from",
-        multiple = FALSE,
-        class = "btn-outline-info btn-sm",
-        style = "margin-top: 25px;"
-      ),
+      uiOutput("copyFromFileUI"),
       div(
         style = "margin-top: 30px; font-size: 0.85em; color: #666;",
         textOutput("selectedSourceFile", inline = TRUE)
@@ -265,13 +342,25 @@ ui <- page_navbar(
   ),
 
   # Add custom CSS and JavaScript for the popup in header
+  header = tags$head(tags$script(HTML(
+    "$(document).on('click', '.shinyDirectories .sF-file-icon, .shinyDirectories .sF-file-name', function() {
+      setTimeout(function() {
+        var $btn = $('.shinyDirectories #sF-selectButton');
+        if ($btn.length && !$btn.prop('disabled')) { $btn.trigger('click'); }
+      }, 100);
+    });"
+  ))),
   #tab panel to view and edit metadata
   nav_panel(
     title = "Photo Manager",
     icon = icon("camera"),
     page_sidebar(
       # select and load folder with photos
-      sidebar = sidebar_contents,
+      sidebar = if (running_locally) {
+        sidebar_contents
+      } else {
+        sidebar_contents_cloud
+      },
       # Main content area
       # First row. Photo preview, metadata display, and metadata editing.
       layout_columns(
@@ -314,7 +403,9 @@ server <- function(input, output, session) {
     sourceFile = NULL, # Add this line
     aiResult = NULL, # Full AI response text
     aiEstimatedDate = NULL, # Parsed date from AI response
-    aiRunning = FALSE # TRUE while AI query is in flight
+    aiRunning = FALSE, # TRUE while AI query is in flight
+    aiModel = NULL, # Model name reported by ellmer
+    tempDir = NULL # Session-scoped temp directory (cloud mode only)
   )
 
   # Custom write_exif function using exifr::exiftool_call()
@@ -568,74 +659,183 @@ server <- function(input, output, session) {
     root_paths <- c(root_paths, root = "/")
   }
 
-  # Custom shinyDirChoose with restricted options
-  observe({
-    shinyDirChoose(
-      input,
-      "selectDir",
-      roots = root_paths,
-      allowDirCreate = FALSE,
-      restrictions = system.file(package = "base")
-    )
-  })
+  # Custom shinyDirChoose with restricted options (local mode only)
+  if (running_locally) {
+    observe({
+      shinyDirChoose(
+        input,
+        "selectDir",
+        roots = root_paths,
+        allowDirCreate = FALSE,
+        restrictions = system.file(package = "base")
+      )
+    })
 
-  observeEvent(
-    input$selectDir,
-    {
-      if (!is.null(input$selectDir)) {
-        if (
-          is.list(input$selectDir) &&
-            !is.null(input$selectDir$path) &&
-            length(input$selectDir$path) > 0
-        ) {
-          values$photoFolder <- parseDirPath(root_paths, input$selectDir)
-        } else if (is.atomic(input$selectDir) && length(input$selectDir) > 0) {
-          tryCatch(
-            {
-              values$photoFolder <- parseDirPath(root_paths, input$selectDir)
-            },
-            error = function(e) {
-              showNotification("Error parsing directory path", type = "warning")
-              return()
-            }
-          )
-        } else {
-          return()
-        }
-        if (
-          !is.null(values$photoFolder) &&
-            length(values$photoFolder) > 0 &&
-            dir.exists(values$photoFolder)
-        ) {
-          photo_extensions <- c("jpg", "jpeg", "png", "tiff", "tif", "bmp")
-          all_files <- list.files(values$photoFolder, full.names = TRUE)
-          values$photoFiles <- all_files[
-            tolower(tools::file_ext(all_files)) %in% photo_extensions
-          ]
-
-          if (length(values$photoFiles) > 0) {
-            values$currentPhotoIndex <- 1
-            loadCurrentPhoto()
-            showNotification(
-              paste("Loaded", length(values$photoFiles), "photos"),
-              type = "message"
+    observeEvent(
+      input$selectDir,
+      {
+        if (!is.null(input$selectDir)) {
+          if (
+            is.list(input$selectDir) &&
+              !is.null(input$selectDir$path) &&
+              length(input$selectDir$path) > 0
+          ) {
+            values$photoFolder <- parseDirPath(root_paths, input$selectDir)
+          } else if (
+            is.atomic(input$selectDir) && length(input$selectDir) > 0
+          ) {
+            tryCatch(
+              {
+                values$photoFolder <- parseDirPath(root_paths, input$selectDir)
+              },
+              error = function(e) {
+                showNotification(
+                  "Error parsing directory path",
+                  type = "warning"
+                )
+                return()
+              }
             )
           } else {
-            showNotification(
-              "No photo files found in selected folder!",
-              type = "warning"
-            )
+            return()
           }
-        } # else {
-        #  cat(values$photoFolder, "\n")
-        #  showNotification("Invalid directory selected", type = "warning")
-        #}
-      }
-    },
-    ignoreInit = TRUE
-  )
+          if (
+            !is.null(values$photoFolder) &&
+              length(values$photoFolder) > 0 &&
+              dir.exists(values$photoFolder)
+          ) {
+            photo_extensions <- c("jpg", "jpeg", "png", "tiff", "tif", "bmp")
+            all_files <- list.files(values$photoFolder, full.names = TRUE)
+            values$photoFiles <- all_files[
+              tolower(tools::file_ext(all_files)) %in% photo_extensions
+            ]
 
-  # Function to load current photo
+            if (length(values$photoFiles) > 0) {
+              values$currentPhotoIndex <- 1
+              loadCurrentPhoto()
+              showNotification(
+                paste("Loaded", length(values$photoFiles), "photos"),
+                type = "message"
+              )
+            } else {
+              showNotification(
+                "No photo files found in selected folder!",
+                type = "warning"
+              )
+            }
+          } # else {
+          #  cat(values$photoFolder, "\n")
+          #  showNotification("Invalid directory selected", type = "warning")
+          #}
+        }
+      },
+      ignoreInit = TRUE
+    )
+  } # end if (running_locally) — local folder selection
+
+  # Cloud mode: handle uploaded photos
+  if (!running_locally) {
+    observeEvent(input$uploadPhotos, {
+      req(input$uploadPhotos)
+
+      # Create a persistent temp directory for this session if needed
+      if (is.null(values$tempDir)) {
+        values$tempDir <- file.path(
+          tempdir(),
+          paste0("photos_", format(Sys.time(), "%Y%m%d_%H%M%S"))
+        )
+        dir.create(values$tempDir, recursive = TRUE)
+      }
+
+      # Copy uploaded files into the session temp directory
+      photo_extensions <- c("jpg", "jpeg", "png", "tiff", "tif", "bmp")
+      new_files <- character(0)
+      for (i in seq_len(nrow(input$uploadPhotos))) {
+        original_name <- input$uploadPhotos$name[i]
+        temp_src <- input$uploadPhotos$datapath[i]
+        dest_path <- file.path(values$tempDir, original_name)
+        # Avoid overwriting by appending an index
+        if (file.exists(dest_path)) {
+          base <- tools::file_path_sans_ext(original_name)
+          ext <- tools::file_ext(original_name)
+          dest_path <- file.path(values$tempDir, paste0(base, "_", i, ".", ext))
+        }
+        if (tolower(tools::file_ext(original_name)) %in% photo_extensions) {
+          file.copy(temp_src, dest_path)
+          new_files <- c(new_files, dest_path)
+        }
+      }
+
+      if (length(new_files) > 0) {
+        # Merge with any previously uploaded files
+        existing <- if (!is.null(values$photoFiles)) {
+          values$photoFiles
+        } else {
+          character(0)
+        }
+        values$photoFiles <- c(existing, new_files)
+        values$photoFolder <- values$tempDir
+        values$currentPhotoIndex <- length(existing) + 1
+        loadCurrentPhoto()
+        showNotification(
+          paste("Uploaded", length(new_files), "photo(s)."),
+          type = "message"
+        )
+      } else {
+        showNotification(
+          "No valid photo files found in upload.",
+          type = "warning"
+        )
+      }
+    })
+
+    # Download the currently displayed photo
+    output$downloadCurrent <- downloadHandler(
+      filename = function() {
+        if (!is.null(values$currentPhoto)) {
+          basename(values$currentPhoto)
+        } else {
+          "photo.jpg"
+        }
+      },
+      content = function(file) {
+        req(values$currentPhoto)
+        file.copy(values$currentPhoto, file)
+      }
+    )
+
+    # Download all photos as a ZIP
+    output$downloadAll <- downloadHandler(
+      filename = function() {
+        paste0("photos_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".zip")
+      },
+      content = function(file) {
+        req(values$photoFiles)
+        zip::zip(
+          zipfile = file,
+          files = values$photoFiles,
+          mode = "cherry-pick"
+        )
+      }
+    )
+
+    # Clear all uploaded photos from the session cache
+    observeEvent(input$clearCache, {
+      if (!is.null(values$tempDir) && dir.exists(values$tempDir)) {
+        unlink(values$tempDir, recursive = TRUE)
+        dir.create(values$tempDir, recursive = TRUE)
+      }
+      values$photoFiles <- NULL
+      values$currentPhoto <- NULL
+      values$currentPhotoIndex <- 1
+      values$originalMetadata <- NULL
+      values$sourceFile <- NULL
+      values$aiResult <- NULL
+      values$aiEstimatedDate <- NULL
+      showNotification("All uploaded photos cleared.", type = "message")
+    })
+  } # end if (!running_locally) — cloud file handling
+
   loadCurrentPhoto <- function() {
     if (!is.null(values$photoFiles) && length(values$photoFiles) > 0) {
       current_file <- values$photoFiles[values$currentPhotoIndex]
@@ -1022,10 +1222,15 @@ server <- function(input, output, session) {
   # AI spinner output — driven reactively by aiRunning / aiResult flags
   output$aiSpinner <- renderUI({
     if (isTRUE(values$aiRunning)) {
+      model_label <- if (!is.null(values$aiModel)) {
+        paste0(" (", values$aiModel, ")")
+      } else {
+        ""
+      }
       div(
         style = "margin-top: 8px; color: #666; font-size: 0.9em;",
         icon("spinner", class = "fa-spin"),
-        " Analyzing photo with AI..."
+        paste0(" Analyzing photo with AI", model_label, "...")
       )
     } else if (!is.null(values$aiResult)) {
       range_match <- regmatches(
@@ -1167,9 +1372,11 @@ server <- function(input, output, session) {
               }
 
               # Create chat and send image
-              chat <- chat_openai(
-                system_prompt = "You are an expert at dating historical photographs based on visual clues."
+              chat <- chat_google_gemini(
+                system_prompt = "You are an expert at dating historical photographs based on visual clues.",
+                echo = "none"
               )
+              values$aiModel <- chat$get_model()
 
               # Read the image and encode it
               img_data <- base64enc::base64encode(current_photo)
@@ -1305,41 +1512,73 @@ server <- function(input, output, session) {
       footer = NULL
     ))
   })
-  # File picker for copying metadata - dynamic roots based on current folder
-  observe({
-    # Safely check if photoFolder exists and is valid
-    folder_is_valid <- !is.null(values$photoFolder) &&
-      length(values$photoFolder) > 0 &&
-      !is.na(values$photoFolder) &&
-      nchar(values$photoFolder) > 0 &&
-      dir.exists(values$photoFolder)
-
-    if (folder_is_valid) {
-      # Create roots with current folder as primary option
-      current_roots <- c(
-        "Current Folder" = values$photoFolder,
-        "Parent Folder" = dirname(values$photoFolder),
-        root_paths
-      )
-
-      shinyFileChoose(
-        input,
+  # Render the correct 'Copy From File' control depending on deployment mode
+  output$copyFromFileUI <- renderUI({
+    if (running_locally) {
+      shinyFilesButton(
         "selectSourceFile",
-        roots = current_roots,
-        filetypes = c("jpg", "jpeg", "png", "tiff", "tif", "bmp")
+        "Copy From File",
+        "Choose photo to copy metadata from",
+        multiple = FALSE,
+        class = "btn-outline-info btn-sm",
+        style = "margin-top: 25px;"
       )
     } else {
-      # Fallback to original roots if no folder is loaded
-      shinyFileChoose(
-        input,
-        "selectSourceFile",
-        roots = root_paths,
-        filetypes = c("jpg", "jpeg", "png", "tiff", "tif", "bmp")
+      # Cloud mode: pick from the uploaded photos in the session cache
+      choices <- if (!is.null(values$photoFiles)) {
+        stats::setNames(values$photoFiles, basename(values$photoFiles))
+      } else {
+        character(0)
+      }
+      div(
+        style = "margin-top: 5px;",
+        selectInput(
+          "selectSourceFileCloud",
+          "Copy From:",
+          choices = c("(none)" = "", choices),
+          selected = ""
+        )
       )
     }
   })
 
-  # Handle file selection for copying metadata
+  # File picker for copying metadata - dynamic roots based on current folder (local only)
+  if (running_locally) {
+    observe({
+      # Safely check if photoFolder exists and is valid
+      folder_is_valid <- !is.null(values$photoFolder) &&
+        length(values$photoFolder) > 0 &&
+        !is.na(values$photoFolder) &&
+        nchar(values$photoFolder) > 0 &&
+        dir.exists(values$photoFolder)
+
+      if (folder_is_valid) {
+        # Create roots with current folder as primary option
+        current_roots <- c(
+          "Current Folder" = values$photoFolder,
+          "Parent Folder" = dirname(values$photoFolder),
+          root_paths
+        )
+
+        shinyFileChoose(
+          input,
+          "selectSourceFile",
+          roots = current_roots,
+          filetypes = c("jpg", "jpeg", "png", "tiff", "tif", "bmp")
+        )
+      } else {
+        # Fallback to original roots if no folder is loaded
+        shinyFileChoose(
+          input,
+          "selectSourceFile",
+          roots = root_paths,
+          filetypes = c("jpg", "jpeg", "png", "tiff", "tif", "bmp")
+        )
+      }
+    })
+  } # end if (running_locally)
+
+  # Handle file selection for copying metadata (local mode)
   observeEvent(input$selectSourceFile, {
     if (!is.null(input$selectSourceFile)) {
       # Use the appropriate roots for parsing based on current state
@@ -1372,6 +1611,23 @@ server <- function(input, output, session) {
           type = "message"
         )
       }
+    }
+  })
+
+  # Handle copy-from-file in cloud mode (selectInput dropdown)
+  observeEvent(input$selectSourceFileCloud, {
+    req(!running_locally)
+    path <- input$selectSourceFileCloud
+    if (!is.null(path) && nchar(path) > 0 && file.exists(path)) {
+      values$sourceFile <- path
+      output$selectedSourceFile <- renderText({
+        basename(path)
+      })
+      copyMetadataFromFile(path)
+      showNotification(
+        paste("Metadata copied from", basename(path)),
+        type = "message"
+      )
     }
   })
 
@@ -1621,23 +1877,16 @@ server <- function(input, output, session) {
 
   # Clean up when session ends (browser closed or tab closed)
   session$onSessionEnded(function() {
-    # Clean up temp directory if it exists (cloud mode)
-    # Use isolate() to access reactive values in callback
+    # Clean up temp directory if it exists (cloud mode only)
     temp_dir <- isolate(values$tempDir)
     if (!is.null(temp_dir) && dir.exists(temp_dir)) {
       tryCatch(
         {
           unlink(temp_dir, recursive = TRUE)
         },
-        error = function(e) {
-          # Silently fail if cleanup doesn't work
-        }
+        error = function(e) {}
       )
     }
-
-    # Note: stopApp() is commented out as it may not be desired in all contexts
-    # Uncomment the following line if you want the app to stop when browser closes
-    stopApp()
   })
 }
 

@@ -1,0 +1,13 @@
+name: photo_meta_editor
+title: photo_meta_editor
+username: viztoy
+account: viztoy
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 16735459
+bundleId: 11620327
+url: https://viztoy.shinyapps.io/photo_meta_editor/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: scratch.R|test_image.jpeg
